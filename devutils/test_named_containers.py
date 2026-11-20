@@ -59,14 +59,14 @@ class LoginSite(BaseHTTPRequestHandler):
 
 
 @contextmanager
-def running_browser(binary, directory, *, enabled):
+def running_browser(binary, directory, *startup_args, enabled):
     profile = Path(directory).resolve()
     common = [str(binary), f'--user-data-dir={profile}', '--no-first-run',
               '--no-default-browser-check', '--use-mock-keychain', '--disable-popup-blocking']
     with (profile / 'browser.log').open('w+') as log:
         features = ['--enable-features=HeliumNamedContainers'] if enabled else []
         process = subprocess.Popen(
-            common + features + ['--remote-debugging-port=0', 'about:blank'],
+            common + features + ['--remote-debugging-port=0', *startup_args],
             stdout=log, stderr=log)
         try:
             deadline = time.monotonic() + 40
@@ -78,13 +78,6 @@ def running_browser(binary, directory, *, enabled):
             if not port_file.exists():
                 raise RuntimeError('Helium did not start with the fresh profile')
             port = int(port_file.read_text().splitlines()[0])
-            while time.monotonic() < deadline:
-                with urlopen(f'http://127.0.0.1:{port}/json/list', timeout=5) as response:
-                    if any(tab['url'] == 'about:blank' for tab in json.load(response)):
-                        break
-                time.sleep(0.1)
-            else:
-                raise RuntimeError('Initial browser tab did not finish opening')
             yield common, port
         except Exception:
             log.seek(0)
@@ -100,18 +93,29 @@ def running_browser(binary, directory, *, enabled):
                 process.wait()
 
 
+def expect_visit(site, label, expected):
+    try:
+        visit = site.visits.get(timeout=20)
+    except queue.Empty as error:
+        raise AssertionError(f'No request for {label}') from error
+    if visit != (label, expected):
+        raise AssertionError(f'{label}: expected {expected}, got {visit}')
+    print(f'{label}: {expected}', flush=True)
+
+
 def run(binary):
     with ThreadingHTTPServer(('127.0.0.1', 0), LoginSite) as site:
         site.tokens = {name: secrets.token_hex(20) for name in ('alice', 'bob', 'casey')}
         site.visits = queue.Queue()
         thread = threading.Thread(target=site.serve_forever, daemon=True)
         thread.start()
+        origin = f'http://127.0.0.1:{site.server_port}'
         try:
             with tempfile.TemporaryDirectory(prefix='helium-containers-') as tmp:
-                with running_browser(binary, tmp, enabled=True) as (command, port):
-                    origin = f'http://127.0.0.1:{site.server_port}'
+                with running_browser(binary, tmp, '--container=Work', f'{origin}/login/alice',
+                                     enabled=True) as (command, port):
+                    expect_visit(site, 'alice-after-login', 'alice')
                     cases = [
-                        ('Work', 'login/alice', 'alice-after-login', 'alice'),
                         ('Work', 'who/work-2', 'work-2', 'alice'),
                         ('Personal', 'who/personal-1', 'personal-1', 'signed out'),
                         (None, 'who/ordinary-1', 'ordinary-1', 'signed out'),
@@ -124,23 +128,19 @@ def run(binary):
                         ('QA.v2/team', 'who/custom-1', 'custom-1', 'signed out'),
                         ('QA.v2/team', 'login/casey', 'casey-after-login', 'casey'),
                         ('QA.v2/team', 'who/custom-2', 'custom-2', 'casey'),
+                        (None, 'who/ordinary-3', 'ordinary-3', 'signed out'),
                     ]
                     for container, path, label, expected in cases:
                         args = [f'--container={container}'] if container else []
                         subprocess.run(command + args + [f'{origin}/{path}'],
                                        check=True, timeout=25,
                                        stdout=subprocess.DEVNULL, cwd=tmp)
-                        try:
-                            visit = site.visits.get(timeout=20)
-                        except queue.Empty as error:
-                            raise AssertionError(f'No request for {label}') from error
-                        if visit != (label, expected):
-                            raise AssertionError(f'{label}: expected {expected}, got {visit}')
-                        print(f'{label}: {expected}', flush=True)
+                        expect_visit(site, label, expected)
 
                     # Confirm the probes were separate, concurrently open tabs
                     # in this browser, rather than sequential loads in one tab.
                     expected_tabs = {f'{origin}/who/{label}' for _, _, label, _ in cases}
+                    expected_tabs.add(f'{origin}/who/alice-after-login')
                     deadline = time.monotonic() + 10
                     while time.monotonic() < deadline:
                         with urlopen(f'http://127.0.0.1:{port}/json/list', timeout=5) as response:
@@ -154,17 +154,12 @@ def run(binary):
             # A second, fresh profile checks the shipped default. An explicit
             # container request must not silently sign in through the ordinary jar.
             with tempfile.TemporaryDirectory(prefix='helium-flag-off-') as tmp:
-                with running_browser(binary, tmp, enabled=False) as (command, _):
+                with running_browser(binary, tmp, 'about:blank', enabled=False) as (command, _):
                     for args in (['--container=Work', f'{origin}/who/should-not-load'],
                                  [f'{origin}/who/flag-off-ordinary']):
                         subprocess.run(command + args, check=True, timeout=25,
                                        stdout=subprocess.DEVNULL, cwd=tmp)
-                    try:
-                        visit = site.visits.get(timeout=20)
-                    except queue.Empty as error:
-                        raise AssertionError('No ordinary request with flag off') from error
-                    if visit != ('flag-off-ordinary', 'signed out'):
-                        raise AssertionError(f'Flag-off container request reached the site: {visit}')
+                    expect_visit(site, 'flag-off-ordinary', 'signed out')
                     print('flag off: ordinary tab loaded, named URL withheld', flush=True)
         finally:
             site.shutdown()
