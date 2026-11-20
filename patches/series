@@ -386,3 +386,4 @@ helium/ui/exclusive-access-bubble.patch
 helium/ui/hide-page-actions-flag.patch
 
 brave/named-containers.patch
+brave/named-container-session-restore.patch

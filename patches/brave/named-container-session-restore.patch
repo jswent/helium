@@ -1,0 +1,863 @@
+Port Brave's named-container session persistence from brave-core v1.102.17
+(6aaa736454bb839b934953eac2ecf0c439f79c7d), including #33313, #36278 and
+#36683. Bind the selected partition before Helium's deferred restore loads
+a page. Store the UUID in local session metadata and guard both URL forms.
+
+Copyright (c) 2025-2026 The Brave Authors. All rights reserved.
+This Source Code Form is subject to the terms of the Mozilla Public
+License, v. 2.0. If a copy of the MPL was not distributed with this file,
+You can obtain one at https://mozilla.org/MPL/2.0/.
+
+--- a/chrome/browser/resource_coordinator/tab_lifecycle_unit.cc
++++ b/chrome/browser/resource_coordinator/tab_lifecycle_unit.cc
+@@ -41,8 +41,12 @@
+ #include "components/permissions/permission_manager.h"
+ #include "content/public/browser/navigation_controller.h"
+ #include "content/public/browser/navigation_entry.h"
++#include "content/public/browser/security_principal.h"
++#include "content/public/browser/site_instance.h"
++#include "content/public/browser/storage_partition_config.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/common/content_features.h"
++#include "content/public/common/helium_named_containers.h"
+ #include "third_party/abseil-cpp/absl/cleanup/cleanup.h"
+ #include "url/gurl.h"
+ 
+@@ -272,6 +276,20 @@
+     uint64_t tab_memory_footprint_estimate) {
+   content::WebContents* const old_contents = web_contents();
+   content::WebContents::CreateParams create_params(tab_strip_model_->profile());
++  if (base::FeatureList::IsEnabled(
++          helium::containers::kHeliumNamedContainers)) {
++    const auto& partition = old_contents->GetSiteInstance()
++                                ->GetSecurityPrincipal()
++                                .GetStoragePartitionConfig();
++    if (partition.partition_domain() == helium::containers::kPartitionDomain) {
++      // Bind the replacement before its controller receives the saved history,
++      // without retaining the disappearing renderer's SiteInstance.
++      create_params.site_instance =
++          content::SiteInstance::CreateForFixedStoragePartition(
++              old_contents->GetBrowserContext(),
++              old_contents->GetLastCommittedURL(), partition);
++    }
++  }
+   // TODO(fdoray): Consider setting |initially_hidden| to true when the tab is
+   // OCCLUDED. Will require checking that the tab reload correctly when it
+   // becomes VISIBLE.
+--- a/chrome/browser/sessions/chrome_serialized_navigation_driver.cc
++++ b/chrome/browser/sessions/chrome_serialized_navigation_driver.cc
+@@ -50,6 +50,7 @@
+ 
+ void ChromeSerializedNavigationDriver::Sanitize(
+     sessions::SerializedNavigationEntry* navigation) const {
++  ContentSerializedNavigationDriver::Sanitize(navigation);
+   content::Referrer old_referrer(
+       navigation->referrer_url(),
+       content::Referrer::ConvertToPolicy(navigation->referrer_policy()));
+--- a/chrome/browser/sessions/session_restore.cc
++++ b/chrome/browser/sessions/session_restore.cc
+@@ -1446,6 +1446,12 @@
+                            const StartupTabs& startup_tabs) {
+     bool is_first_tab = true;
+     for (const auto& startup_tab : startup_tabs) {
++      if (startup_tab.type == StartupTab::Type::kPinned &&
++          startup_tab.storage_partition_config) {
++        chrome::AddRestoredPinnedStartupTab(browser, startup_tab, is_first_tab);
++        is_first_tab = false;
++        continue;
++      }
+       const GURL& url = startup_tab.url;
+ #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+       if (url == whats_new::GetWebUIStartupURL()) {
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -506,13 +506,16 @@
+       "//chrome/browser/glic",
+       "//chrome/browser/profiles:profile",
+       "//chrome/browser/sessions",
++      "//chrome/browser/tab_contents",
+       "//chrome/browser/ui/browser_window",
+       "//chrome/browser/ui/send_tab_to_self",
++      "//chrome/browser/ui/startup:startup_tab",
+       "//chrome/browser/ui/tabs:tab_enums",
+       "//chrome/browser/ui/tabs:tab_group",
+       "//chrome/browser/ui/tabs:tab_strip",
+       "//chrome/browser/ui/webui_browser",
+       "//chrome/common:buildflags",
++      "//components/favicon/content",
+       "//components/sessions",
+       "//components/tab_groups",
+       "//components/tabs:public",
+--- a/chrome/browser/ui/browser_tabrestore.cc
++++ b/chrome/browser/ui/browser_tabrestore.cc
+@@ -17,9 +17,11 @@
+ #include "chrome/browser/sessions/session_restore.h"
+ #include "chrome/browser/sessions/session_service_base.h"
+ #include "chrome/browser/sessions/session_service_lookup.h"
++#include "chrome/browser/tab_contents/tab_util.h"
+ #include "chrome/browser/ui/browser_window.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/send_tab_to_self/send_tab_to_self_activation_tracker.h"
++#include "chrome/browser/ui/startup/startup_tab.h"
+ #include "chrome/browser/ui/tab_ui_helper.h"
+ #include "chrome/browser/ui/tabs/public/tab_features.h"
+ #include "chrome/browser/ui/tabs/tab_enums.h"
+@@ -27,6 +29,7 @@
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #include "chrome/browser/ui/webui_browser/webui_browser.h"
+ #include "chrome/common/buildflags.h"
++#include "chrome/common/webui_url_constants.h"
+ #include "components/favicon/content/content_favicon_driver.h"
+ #include "components/sessions/content/content_serialized_navigation_builder.h"
+ #include "components/tab_groups/tab_group_id.h"
+@@ -38,6 +41,7 @@
+ #include "content/public/browser/restore_type.h"
+ #include "content/public/browser/session_storage_namespace_handle.h"
+ #include "content/public/browser/web_contents.h"
++#include "content/public/common/helium_named_containers.h"
+ #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
+ #include "ui/gfx/geometry/size.h"
+ #include "ui/gfx/range/range.h"
+@@ -73,6 +77,28 @@
+       content::CreateMapWithDefaultSessionStorageNamespace(
+           browser->GetProfile(), session_storage_namespace);
+   WebContents::CreateParams create_params(browser->GetProfile());
++  std::string container_id;
++  if (base::FeatureList::IsEnabled(
++          helium::containers::kHeliumNamedContainers) &&
++      selected_navigation >= 0 &&
++      static_cast<size_t>(selected_navigation) < navigations.size()) {
++    const auto& selected = navigations[selected_navigation];
++    container_id = selected.named_container_id();
++    if (!container_id.empty()) {
++      const auto partition = content::StoragePartitionConfig::Create(
++          browser->GetProfile(), helium::containers::kPartitionDomain,
++          container_id, browser->GetProfile()->IsOffTheRecord());
++      const GURL& url = selected.virtual_url();
++      create_params.site_instance = tab_util::GetSiteInstanceForNewTab(
++          browser->GetProfile(),
++          content::SiteInstance::ShouldAssignSiteForURL(url)
++              ? url
++              : chrome::ChromeUINewTabURLAsGURL(),
++          partition);
++      // The upstream handle belongs to the ordinary partition.
++      session_storage_namespace_map.clear();
++    }
++  }
+   create_params.initially_hidden = initially_hidden;
+   create_params.desired_renderer_state =
+       WebContents::CreateParams::kNoRendererProcess;
+@@ -92,7 +118,7 @@
+ 
+   std::vector<std::unique_ptr<NavigationEntry>> entries =
+       ContentSerializedNavigationBuilder::ToNavigationEntries(
+-          navigations, browser->GetProfile());
++          navigations, browser->GetProfile(), container_id);
+ 
+   blink::UserAgentOverride ua_override;
+   ua_override.ua_string_override = user_agent_override.ua_string_override;
+@@ -278,6 +304,30 @@
+ }
+ 
+ }  // namespace
++
++void AddRestoredPinnedStartupTab(BrowserWindowInterface* browser,
++                                 const StartupTab& tab,
++                                 bool select) {
++  sessions::SerializedNavigationEntry navigation;
++  navigation.set_index(0);
++  navigation.set_virtual_url(tab.url);
++  if (tab.storage_partition_config) {
++    navigation.set_named_container_id(
++        tab.storage_partition_config->partition_name());
++  }
++  chrome::AddRestoredTab(
++      browser, base::span_from_ref(navigation),
++      browser->tab_strip_model()->IndexOfFirstNonPinnedTab(),
++      /*selected_navigation=*/0, /*extension_app_id=*/std::string(),
++      /*group=*/std::nullopt, select, /*pin=*/true,
++      /*last_active_time_ticks=*/base::TimeTicks(),
++      /*last_active_time=*/base::Time(), /*storage_namespace=*/nullptr,
++      /*user_agent_override=*/sessions::SerializedUserAgentOverride(),
++      /*extra_data=*/{}, /*from_session_restore=*/false,
++      /*is_active_browser=*/std::nullopt,
++      select ? RestoredTabLoadPolicy::kLoadIfVisible
++             : RestoredTabLoadPolicy::kDeferUntilActivation);
++}
+ 
+ WebContents* AddRestoredTab(
+     BrowserWindowInterface* browser,
+--- a/chrome/browser/ui/browser_tabrestore.h
++++ b/chrome/browser/ui/browser_tabrestore.h
+@@ -14,6 +14,7 @@
+ #include "components/sessions/core/session_types.h"
+ 
+ class BrowserWindowInterface;
++struct StartupTab;
+ 
+ namespace content {
+ class SessionStorageNamespaceHandle;
+@@ -33,6 +34,11 @@
+   // Keep the restored tab unloaded until it becomes active.
+   kDeferUntilActivation,
+ };
++
++// Restores a pin from startup preferences, including its container identity.
++void AddRestoredPinnedStartupTab(BrowserWindowInterface* browser,
++                                 const StartupTab& tab,
++                                 bool select);
+ 
+ // Add a tab with its session history restored from the SessionRestore and
+ // TabRestoreService systems. If `select` is true, the tab is selected.
+--- a/chrome/browser/ui/startup/BUILD.gn
++++ b/chrome/browser/ui/startup/BUILD.gn
+@@ -230,6 +230,7 @@
+       "//chrome/browser/apps/app_service",
+       "//chrome/browser/apps/platform_apps",
+       "//chrome/browser/custom_handlers",
++      "//chrome/browser/ui:browser_tabrestore",
+       "//chrome/browser/extensions",
+       "//chrome/browser/headless:command_processor",
+       "//chrome/browser/lifetime",
+--- a/chrome/browser/ui/startup/startup_browser_creator_impl.cc
++++ b/chrome/browser/ui/startup/startup_browser_creator_impl.cc
+@@ -219,23 +219,6 @@
+   return workspace_browser;
+ }
+ 
+-void AddDeferredPinnedStartupTab(BrowserWindowInterface* browser,
+-                                 const GURL& url) {
+-  sessions::SerializedNavigationEntry navigation;
+-  navigation.set_index(0);
+-  navigation.set_virtual_url(url);
+-  chrome::AddRestoredTab(
+-      browser, base::span_from_ref(navigation),
+-      browser->tab_strip_model()->IndexOfFirstNonPinnedTab(),
+-      /*selected_navigation=*/0, /*extension_app_id=*/std::string(),
+-      /*group=*/std::nullopt, /*select=*/false, /*pin=*/true,
+-      /*last_active_time_ticks=*/base::TimeTicks(),
+-      /*last_active_time=*/base::Time(), /*storage_namespace=*/nullptr,
+-      /*user_agent_override=*/sessions::SerializedUserAgentOverride(),
+-      /*extra_data=*/{}, /*from_session_restore=*/false,
+-      /*is_active_browser=*/std::nullopt,
+-      chrome::RestoredTabLoadPolicy::kDeferUntilActivation);
+-}
+ 
+ }  // namespace
+ 
+@@ -395,6 +378,12 @@
+   custom_handlers::ProtocolHandlerRegistry* registry =
+       ProtocolHandlerRegistryFactory::GetForBrowserContext(profile_);
+   for (auto& tab : tabs) {
++    if (tab.type == StartupTab::Type::kPinned && tab.storage_partition_config) {
++      chrome::AddRestoredPinnedStartupTab(browser, tab,
++                                          first_tab && !open_in_background);
++      first_tab = false;
++      continue;
++    }
+     // We skip URLs that we'd have to launch an external protocol handler for.
+     // This avoids us getting into an infinite loop asking ourselves to open
+     // a URL, should the handler be (incorrectly) configured to be us. Anyone
+@@ -463,7 +452,7 @@
+     // Pinned tabs from the startup-tab provider do not pass through the session
+     // restore tab loader, so add background ones without loading them.
+     if (!first_tab && tab.type == StartupTab::Type::kPinned) {
+-      AddDeferredPinnedStartupTab(browser, tab.url);
++      chrome::AddRestoredPinnedStartupTab(browser, tab, false);
+       continue;
+     }
+ 
+--- a/chrome/browser/ui/tabs/pinned_tab_codec.cc
++++ b/chrome/browser/ui/tabs/pinned_tab_codec.cc
+@@ -17,9 +17,12 @@
+ #include "components/pref_registry/pref_registry_syncable.h"
+ #include "components/prefs/pref_service.h"
+ #include "components/prefs/scoped_user_pref_update.h"
++#include "components/sessions/content/content_serialized_navigation_builder.h"
++#include "components/sessions/core/serialized_navigation_entry.h"
+ #include "content/public/browser/navigation_controller.h"
+ #include "content/public/browser/navigation_entry.h"
+ #include "content/public/browser/web_contents.h"
++#include "content/public/common/helium_named_containers.h"
+ 
+ using content::NavigationEntry;
+ 
+@@ -29,9 +32,18 @@
+ const char kURL[] = "url";
+ 
+ // Returns a base::DictValue representing the supplied StartupTab.
+-base::DictValue EncodeTab(const GURL& url) {
++base::DictValue EncodeTab(const GURL& url, const std::string& id) {
+   base::DictValue dict;
+-  dict.Set(kURL, url.spec());
++  if (!id.empty()) {
++    dict.Set("container_id", id);
++    dict.Set(kURL, sessions::SerializedNavigationEntry::HasContainerScheme(url)
++                       ? url.spec()
++                       : sessions::SerializedNavigationEntry::WrapContainerURL(
++                             url, id)
++                             .spec());
++  } else {
++    dict.Set(kURL, url.spec());
++  }
+   return dict;
+ }
+ 
+@@ -48,18 +60,47 @@
+     NavigationEntry* entry =
+         web_contents->GetController().GetLastCommittedEntry();
+     if (entry) {
+-      serialized_tabs.Append(EncodeTab(entry->GetURL()));
++      using Builder = sessions::ContentSerializedNavigationBuilder;
++      const auto saved =
++          Builder::FromNavigationEntry(0, entry, Builder::EXCLUDE_PAGE_STATE);
++      serialized_tabs.Append(EncodeTab(saved.named_container_id().empty()
++                                           ? entry->GetURL()
++                                           : saved.virtual_url(),
++                                       saved.named_container_id()));
+     }
+   }
+ }
+ 
+ // Decodes the previously written values in `value` to `tab`, returning true
+ // on success.
+-std::optional<StartupTab> DecodeTab(const base::DictValue& value) {
++std::optional<StartupTab> DecodeTab(const base::DictValue& value,
++                                    Profile* profile) {
+   const std::string* const url_string = value.FindString(kURL);
+-  return url_string ? std::make_optional(StartupTab(GURL(*url_string),
+-                                                    StartupTab::Type::kPinned))
+-                    : std::nullopt;
++  if (!url_string) {
++    return std::nullopt;
++  }
++  const GURL url(*url_string);
++  const auto* id = value.FindString("container_id");
++  if (!id && !sessions::SerializedNavigationEntry::HasContainerScheme(url)) {
++    return StartupTab(url, StartupTab::Type::kPinned);
++  }
++  if (!id) {
++    return std::nullopt;
++  }
++  GURL original =
++      sessions::SerializedNavigationEntry::UnwrapContainerURL(url, *id);
++  if (!original.is_valid()) {
++    return std::nullopt;
++  }
++  StartupTab tab(
++      base::FeatureList::IsEnabled(helium::containers::kHeliumNamedContainers)
++          ? original
++          : url,
++      StartupTab::Type::kPinned);
++  tab.storage_partition_config = content::StoragePartitionConfig::Create(
++      profile, helium::containers::kPartitionDomain, *id,
++      profile->IsOffTheRecord());
++  return tab;
+ }
+ 
+ }  // namespace
+@@ -101,7 +142,10 @@
+   base::ListValue& values = update.Get();
+   values.clear();
+   for (const auto& tab : tabs) {
+-    values.Append(EncodeTab(tab.url));
++    values.Append(
++        EncodeTab(tab.url, tab.storage_partition_config
++                               ? tab.storage_partition_config->partition_name()
++                               : std::string()));
+   }
+ }
+ 
+@@ -118,7 +162,8 @@
+     if (!serialized_tab.is_dict()) {
+       continue;
+     }
+-    std::optional<StartupTab> tab = DecodeTab(serialized_tab.GetDict());
++    std::optional<StartupTab> tab =
++        DecodeTab(serialized_tab.GetDict(), profile);
+     if (tab.has_value()) {
+       results.push_back(tab.value());
+     }
+--- a/components/sessions/BUILD.gn
++++ b/components/sessions/BUILD.gn
+@@ -44,6 +44,7 @@
+     deps = [
+       "//base",
+       "//content/public/common",
++      "//third_party/blink/public/common",
+       "//ui/base",
+       "//url",
+     ]
+--- a/components/sessions/content/content_serialized_navigation_builder.cc
++++ b/components/sessions/content/content_serialized_navigation_builder.cc
+@@ -15,14 +15,37 @@
+ #include "components/sessions/core/serialized_navigation_entry.h"
+ #include "content/public/browser/browser_context.h"
+ #include "content/public/browser/favicon_status.h"
++#include "content/public/browser/helium_container_navigation.h"
+ #include "content/public/browser/navigation_controller.h"
+ #include "content/public/browser/navigation_entry.h"
+ #include "content/public/browser/navigation_entry_restore_context.h"
++#include "content/public/common/helium_named_containers.h"
+ #include "content/public/common/referrer.h"
+ #include "services/network/public/cpp/shared_url_loader_factory.h"
+ #include "third_party/blink/public/common/page_state/page_state.h"
++#include "url/url_constants.h"
+ 
+ namespace sessions {
++namespace {
++
++// Keep a cloneable key for lazy or discarded entries that have no live site
++// yet. A blocked tab retains its sealed record across another browser exit.
++struct ContainerRestoreData : base::SupportsUserData::Data {
++  static constexpr char kKey = 0;
++  std::string id;
++  std::unique_ptr<SerializedNavigationEntry> sealed;
++
++  std::unique_ptr<Data> Clone() override {
++    auto copy = std::make_unique<ContainerRestoreData>();
++    copy->id = id;
++    if (sealed) {
++      copy->sealed = std::make_unique<SerializedNavigationEntry>(*sealed);
++    }
++    return copy;
++  }
++};
++
++}  // namespace
+ 
+ // static
+ SerializedNavigationEntry
+@@ -65,6 +88,27 @@
+       navigation.extended_info_map_[handler_entry.first] = value;
+   }
+ 
++  const auto* saved = static_cast<const ContainerRestoreData*>(
++      entry->GetUserData(&ContainerRestoreData::kKey));
++  if (saved && saved->sealed &&
++      entry->GetVirtualURL() == saved->sealed->VirtualURLForStorage()) {
++    auto sealed = *saved->sealed;
++    sealed.set_index(index);
++    if (serialization_options & SerializationOptions::EXCLUDE_PAGE_STATE) {
++      sealed.set_encoded_page_state({});
++    }
++    return sealed;
++  }
++  if (base::FeatureList::IsEnabled(
++          helium::containers::kHeliumNamedContainers)) {
++    std::string id = content::GetLiveNamedContainerId(*entry);
++    if (id.empty() && saved) {
++      id = saved->id;
++    }
++    if (!id.empty()) {
++      navigation.set_named_container_id(id);
++    }
++  }
+   return navigation;
+ }
+ 
+@@ -73,10 +117,32 @@
+ ContentSerializedNavigationBuilder::ToNavigationEntry(
+     const SerializedNavigationEntry* navigation,
+     content::BrowserContext* browser_context,
+-    content::NavigationEntryRestoreContext* restore_context) {
++    content::NavigationEntryRestoreContext* restore_context,
++    std::string_view target_container) {
+   DCHECK(navigation);
+   DCHECK(browser_context);
+   DCHECK(restore_context);
++
++  const std::string id = navigation->named_container_id();
++  if (id != target_container ||
++      SerializedNavigationEntry::HasContainerScheme(
++          navigation->virtual_url()) ||
++      (!id.empty() && !base::FeatureList::IsEnabled(
++                          helium::containers::kHeliumNamedContainers))) {
++    // Never pass a protected URL, subframe tree, POST body or original URL to
++    // a controller that cannot restore this entry in its own partition.
++    SerializedNavigationEntry blank;
++    blank.set_index(navigation->index());
++    blank.set_virtual_url(GURL(url::kAboutBlankURL));
++    auto entry = ToNavigationEntry(&blank, browser_context, restore_context);
++    if (!id.empty()) {
++      entry->SetVirtualURL(navigation->VirtualURLForStorage());
++      auto data = std::make_unique<ContainerRestoreData>();
++      data->sealed = std::make_unique<SerializedNavigationEntry>(*navigation);
++      entry->SetUserData(&ContainerRestoreData::kKey, std::move(data));
++    }
++    return entry;
++  }
+ 
+   // The initial values of the NavigationEntry are usually temporary - they will
+   // normally get clobbered by one of the SetPageState calls below.
+@@ -208,6 +274,11 @@
+   DCHECK_EQ(SerializedNavigationEntry::STATE_INVALID,
+             navigation->blocked_state_);
+ 
++  if (!id.empty()) {
++    auto data = std::make_unique<ContainerRestoreData>();
++    data->id = id;
++    entry->SetUserData(&ContainerRestoreData::kKey, std::move(data));
++  }
+   return entry;
+ }
+ 
+@@ -215,14 +286,15 @@
+ std::vector<std::unique_ptr<content::NavigationEntry>>
+ ContentSerializedNavigationBuilder::ToNavigationEntries(
+     base::span<const SerializedNavigationEntry> navigations,
+-    content::BrowserContext* browser_context) {
++    content::BrowserContext* browser_context,
++    std::string_view target_container) {
+   std::unique_ptr<content::NavigationEntryRestoreContext> restore_context =
+       content::NavigationEntryRestoreContext::Create();
+   std::vector<std::unique_ptr<content::NavigationEntry>> entries;
+   entries.reserve(navigations.size());
+   for (const auto& navigation : navigations) {
+-    entries.push_back(
+-        ToNavigationEntry(&navigation, browser_context, restore_context.get()));
++    entries.push_back(ToNavigationEntry(
++        &navigation, browser_context, restore_context.get(), target_container));
+   }
+   return entries;
+ }
+--- a/components/sessions/content/content_serialized_navigation_builder.h
++++ b/components/sessions/content/content_serialized_navigation_builder.h
+@@ -6,6 +6,7 @@
+ #define COMPONENTS_SESSIONS_CONTENT_CONTENT_SERIALIZED_NAVIGATION_BUILDER_H_
+ 
+ #include <memory>
++#include <string_view>
+ #include <vector>
+ 
+ #include "base/containers/span.h"
+@@ -44,6 +45,8 @@
+       SerializationOptions serialization_options =
+           SerializationOptions::DEFAULT);
+ 
++  // The caller must have bound the receiving WebContents to target_container
++  // before decoding protected entries. The empty target is an ordinary tab.
+   // Convert the given SerializedNavigationEntry into a NavigationEntry with the
+   // given context.  The NavigationEntry will have a transition type of
+   // PAGE_TRANSITION_RELOAD and a new unique ID.
+@@ -54,13 +57,15 @@
+   static std::unique_ptr<content::NavigationEntry> ToNavigationEntry(
+       const SerializedNavigationEntry* navigation,
+       content::BrowserContext* browser_context,
+-      content::NavigationEntryRestoreContext* restore_context);
++      content::NavigationEntryRestoreContext* restore_context,
++      std::string_view target_container = {});
+ 
+   // Converts a set of SerializedNavigationEntrys into a list of
+   // NavigationEntrys with the given context.
+   static std::vector<std::unique_ptr<content::NavigationEntry>>
+   ToNavigationEntries(base::span<const SerializedNavigationEntry> navigations,
+-                      content::BrowserContext* browser_context);
++                      content::BrowserContext* browser_context,
++                      std::string_view target_container = {});
+ };
+ 
+ }  // namespace sessions
+--- a/components/sessions/content/content_serialized_navigation_driver.cc
++++ b/components/sessions/content/content_serialized_navigation_driver.cc
+@@ -7,9 +7,13 @@
+ #include <utility>
+ 
+ #include "base/memory/singleton.h"
++#include "base/strings/utf_string_conversions.h"
+ #include "components/sessions/core/serialized_navigation_entry.h"
++#include "content/public/common/helium_named_containers.h"
+ #include "services/network/public/mojom/referrer_policy.mojom.h"
+ #include "third_party/blink/public/common/page_state/page_state.h"
++#include "third_party/blink/public/common/page_state/page_state_serialization.h"
++#include "url/url_constants.h"
+ 
+ namespace sessions {
+ 
+@@ -57,16 +61,71 @@
+ std::string
+ ContentSerializedNavigationDriver::GetSanitizedPageStateForPickle(
+     const SerializedNavigationEntry* navigation) const {
+-  if (!navigation->has_post_data())
+-    return navigation->encoded_page_state();
++  std::string encoded = navigation->encoded_page_state();
++  if (navigation->has_post_data()) {
++    encoded = blink::PageState::CreateFromEncodedData(encoded)
++                  .RemovePasswordData()
++                  .ToEncodedData();
++  }
++  const std::string id = navigation->named_container_id();
++  if (id.empty() || encoded.empty() ||
++      SerializedNavigationEntry::HasContainerScheme(
++          navigation->virtual_url())) {
++    return encoded;
++  }
+ 
+-  blink::PageState page_state =
+-      blink::PageState::CreateFromEncodedData(navigation->encoded_page_state());
+-  return page_state.RemovePasswordData().ToEncodedData();
++  // Blink uses the URL inside PageState independently of the virtual URL.
++  // If the blob cannot be rewritten, restore from the protected URL alone.
++  blink::ExplodedPageState state;
++  if (!blink::DecodePageState(encoded, &state) || !state.top.url_string) {
++    return {};
++  }
++  const GURL wrapped = SerializedNavigationEntry::WrapContainerURL(
++      GURL(*state.top.url_string), id);
++  if (!wrapped.is_valid()) {
++    return {};
++  }
++  state.top.url_string = base::UTF8ToUTF16(wrapped.spec());
++  blink::EncodePageState(state, &encoded);
++  return encoded;
+ }
+ 
+ void ContentSerializedNavigationDriver::Sanitize(
+     SerializedNavigationEntry* navigation) const {
++  const std::string id = navigation->named_container_id();
++  if (id.empty() && !SerializedNavigationEntry::HasContainerScheme(
++                        navigation->virtual_url())) {
++    return;
++  }
++  const GURL original = SerializedNavigationEntry::UnwrapContainerURL(
++      navigation->virtual_url(), id);
++  if (!original.is_valid()) {
++    // An incomplete record, or a literal reserved scheme with no browser key.
++    const int index = navigation->index();
++    *navigation = SerializedNavigationEntry();
++    navigation->set_index(index);
++    navigation->set_virtual_url(GURL(url::kAboutBlankURL));
++    return;
++  }
++  if (!base::FeatureList::IsEnabled(
++          helium::containers::kHeliumNamedContainers)) {
++    return;  // Keep the wire representation intact while the feature is off.
++  }
++  navigation->set_virtual_url(original);
++  if (!navigation->encoded_page_state().empty()) {
++    blink::ExplodedPageState state;
++    std::string decoded;
++    if (blink::DecodePageState(navigation->encoded_page_state(), &state) &&
++        state.top.url_string) {
++      const GURL actual = SerializedNavigationEntry::UnwrapContainerURL(
++          GURL(*state.top.url_string), id);
++      if (actual.is_valid()) {
++        state.top.url_string = base::UTF8ToUTF16(actual.spec());
++        blink::EncodePageState(state, &decoded);
++      }
++    }
++    navigation->set_encoded_page_state(decoded);
++  }
+ }
+ 
+ std::string ContentSerializedNavigationDriver::StripReferrerFromPageState(
+--- a/components/sessions/core/serialized_navigation_entry.cc
++++ b/components/sessions/core/serialized_navigation_entry.cc
+@@ -10,8 +10,11 @@
+ #include <utility>
+ 
+ #include "base/pickle.h"
++#include "base/strings/strcat.h"
+ #include "base/trace_event/memory_usage_estimator.h"
++#include "base/uuid.h"
+ #include "components/sessions/core/serialized_navigation_driver.h"
++#include "url/url_constants.h"
+ 
+ namespace sessions {
+ 
+@@ -92,6 +95,62 @@
+ 
+ }  // namespace
+ 
++namespace {
++constexpr char kNamedContainerId[] = "helium.named_container_id";
++constexpr char kContainerSchemePrefix[] = "containers+";
++}  // namespace
++
++std::string SerializedNavigationEntry::named_container_id() const {
++  const auto it = extended_info_map_.find(kNamedContainerId);
++  return it == extended_info_map_.end() ? std::string() : it->second;
++}
++
++void SerializedNavigationEntry::set_named_container_id(const std::string& id) {
++  CHECK(base::Uuid::ParseLowercase(id).is_valid());
++  extended_info_map_[kNamedContainerId] = id;
++}
++
++bool SerializedNavigationEntry::HasContainerScheme(const GURL& url) {
++  return url.scheme().starts_with(kContainerSchemePrefix);
++}
++
++std::string SerializedNavigationEntry::ContainerIdFromStorageURL(
++    const GURL& url) {
++  if (!HasContainerScheme(url)) {
++    return {};
++  }
++  return base::Uuid::ParseLowercase(
++             url.scheme().substr(sizeof(kContainerSchemePrefix) - 1))
++      .AsLowercaseString();
++}
++
++GURL SerializedNavigationEntry::WrapContainerURL(const GURL& url,
++                                                 std::string_view id) {
++  if (!url.is_valid() || !base::Uuid::ParseLowercase(id).is_valid()) {
++    return GURL();
++  }
++  return GURL(base::StrCat({kContainerSchemePrefix, id, ":", url.spec()}));
++}
++
++GURL SerializedNavigationEntry::UnwrapContainerURL(const GURL& url,
++                                                   std::string_view id) {
++  if (!url.is_valid() || !base::Uuid::ParseLowercase(id).is_valid() ||
++      url.scheme() != base::StrCat({kContainerSchemePrefix, id})) {
++    return GURL();
++  }
++  return GURL(std::string_view(url.spec()).substr(url.scheme().size() + 1));
++}
++
++GURL SerializedNavigationEntry::VirtualURLForStorage() const {
++  const std::string id = named_container_id();
++  if (id.empty()) {
++    return HasContainerScheme(virtual_url_) ? GURL(url::kAboutBlankURL)
++                                            : virtual_url_;
++  }
++  return HasContainerScheme(virtual_url_) ? virtual_url_
++                                          : WrapContainerURL(virtual_url_, id);
++}
++
+ // Pickle order:
+ //
+ // index_
+@@ -120,7 +179,7 @@
+   int bytes_written = 0;
+ 
+   WriteStringToPickle(pickle, &bytes_written, max_size,
+-                      virtual_url_.spec());
++                      VirtualURLForStorage().spec());
+ 
+   WriteString16ToPickle(pickle, &bytes_written, max_size, title_);
+ 
+--- a/components/sessions/core/serialized_navigation_entry.h
++++ b/components/sessions/core/serialized_navigation_entry.h
+@@ -10,6 +10,7 @@
+ #include <map>
+ #include <memory>
+ #include <string>
++#include <string_view>
+ #include <vector>
+ 
+ #include "base/time/time.h"
+@@ -97,6 +98,16 @@
+   void set_password_state(PasswordState password_state) {
+     password_state_ = password_state;
+   }
++
++  // The ID is local browser metadata. A URL supplied by a site is never
++  // sufficient to select a named partition.
++  std::string named_container_id() const;
++  void set_named_container_id(const std::string& id);
++  GURL VirtualURLForStorage() const;
++  static GURL WrapContainerURL(const GURL& url, std::string_view id);
++  static GURL UnwrapContainerURL(const GURL& url, std::string_view id);
++  static bool HasContainerScheme(const GURL& url);
++  static std::string ContainerIdFromStorageURL(const GURL& url);
+ 
+   const GURL& virtual_url() const { return virtual_url_; }
+   void set_virtual_url(const GURL& virtual_url) { virtual_url_ = virtual_url; }
+--- a/components/sync_sessions/synced_session.cc
++++ b/components/sync_sessions/synced_session.cc
+@@ -46,6 +46,12 @@
+     navigation.set_referrer_policy(kObsoleteReferrerPolicyNever);
+   }
+   navigation.set_virtual_url(GURL(sync_data.virtual_url()));
++  const std::string container_id =
++      SerializedNavigationEntry::ContainerIdFromStorageURL(
++          navigation.virtual_url());
++  if (!container_id.empty()) {
++    navigation.set_named_container_id(container_id);
++  }
+   navigation.set_title(base::UTF8ToUTF16(sync_data.title()));
+ 
+   uint32_t transition =
+@@ -102,9 +108,9 @@
+   // contain invalid URLs. The same is true for session data restored from
+   // local storage: SessionStore does not enforce this so it is necessary to
+   // handle empty or invalid URLs here.
+-  sync_data.set_virtual_url(navigation.virtual_url().is_valid()
+-                                ? navigation.virtual_url().spec()
+-                                : std::string());
++  const GURL virtual_url = navigation.VirtualURLForStorage();
++  sync_data.set_virtual_url(virtual_url.is_valid() ? virtual_url.spec()
++                                                   : std::string());
+   sync_data.set_referrer(navigation.referrer_url().is_valid()
+                              ? navigation.referrer_url().spec()
+                              : std::string());
+--- a/content/browser/renderer_host/navigation_entry_impl.cc
++++ b/content/browser/renderer_host/navigation_entry_impl.cc
+@@ -30,8 +30,10 @@
+ #include "content/browser/security/cpsp/child_process_security_policy_impl.h"
+ #include "content/common/content_constants_internal.h"
+ #include "content/common/features.h"
++#include "content/public/browser/helium_container_navigation.h"
+ #include "content/public/browser/reload_type.h"
+ #include "content/public/common/content_constants.h"
++#include "content/public/common/helium_named_containers.h"
+ #include "content/public/common/url_constants.h"
+ #include "net/storage_access_api/status.h"
+ #include "services/metrics/public/cpp/ukm_source_id.h"
+@@ -1384,4 +1386,19 @@
+   return GetBaseURLForDataURL().is_empty() ? GURL() : GetVirtualURL();
+ }
+ 
++std::string GetLiveNamedContainerId(const NavigationEntry& entry) {
++  const auto* root =
++      NavigationEntryImpl::FromNavigationEntry(&entry)->root_node();
++  if (const auto* instance = root && root->frame_entry
++                                 ? root->frame_entry->site_instance()
++                                 : nullptr) {
++    const auto& config =
++        instance->GetSecurityPrincipal().GetStoragePartitionConfig();
++    if (config.partition_domain() == helium::containers::kPartitionDomain) {
++      return config.partition_name();
++    }
++  }
++  return {};
++}
++
+ }  // namespace content
+--- a/content/public/browser/BUILD.gn
++++ b/content/public/browser/BUILD.gn
+@@ -269,6 +269,7 @@
+     "navigation_details.cc",
+     "navigation_details.h",
+     "navigation_discard_reason.h",
++    "helium_container_navigation.h",
+     "navigation_entry.h",
+     "navigation_entry_restore_context.h",
+     "navigation_handle.cc",
+--- /dev/null
++++ b/content/public/browser/helium_container_navigation.h
+@@ -0,0 +1,23 @@
++// Copyright (c) 2025-2026 The Brave Authors. All rights reserved.
++// Copyright (c) 2026 The Helium Authors.
++// This Source Code Form is subject to the terms of the Mozilla Public
++// License, v. 2.0. If a copy of the MPL was not distributed with this file,
++// You can obtain one at https://mozilla.org/MPL/2.0/.
++
++#ifndef CONTENT_PUBLIC_BROWSER_HELIUM_CONTAINER_NAVIGATION_H_
++#define CONTENT_PUBLIC_BROWSER_HELIUM_CONTAINER_NAVIGATION_H_
++
++#include <string>
++
++#include "content/common/content_export.h"
++
++namespace content {
++class NavigationEntry;
++
++// Returns the live main frame's container UUID. An unloaded restore entry may
++// have no SiteInstance yet; the sessions layer retains its saved key.
++CONTENT_EXPORT std::string GetLiveNamedContainerId(
++    const NavigationEntry& entry);
++}  // namespace content
++
++#endif  // CONTENT_PUBLIC_BROWSER_HELIUM_CONTAINER_NAVIGATION_H_
