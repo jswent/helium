@@ -20,10 +20,20 @@ from urllib.request import urlopen
 
 
 class LoginSite(BaseHTTPRequestHandler):
-    """A single origin with two dummy accounts and server-side sessions."""
+    """A single origin with dummy accounts and server-side sessions."""
 
     def do_GET(self):
         action, _, label = self.path.lstrip('/').partition('/')
+        if action == 'spawn' and label in ('opener', 'noopener'):
+            features = 'noopener' if label == 'noopener' else ''
+            body = (f'<script>window.open("/who/{label}", "_blank", '
+                    f'"{features}");</script>').encode('ascii')
+            self.send_response(HTTPStatus.OK)
+            self.send_header('Content-Type', 'text/html')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if action == 'login' and label in self.server.tokens:
             token = self.server.tokens[label]
             self.send_response(HTTPStatus.SEE_OTHER)
@@ -52,7 +62,7 @@ class LoginSite(BaseHTTPRequestHandler):
 def running_browser(binary, directory, *, enabled):
     profile = Path(directory).resolve()
     common = [str(binary), f'--user-data-dir={profile}', '--no-first-run',
-              '--no-default-browser-check', '--use-mock-keychain']
+              '--no-default-browser-check', '--use-mock-keychain', '--disable-popup-blocking']
     with (profile / 'browser.log').open('w+') as log:
         features = ['--enable-features=HeliumNamedContainers'] if enabled else []
         process = subprocess.Popen(
@@ -92,7 +102,7 @@ def running_browser(binary, directory, *, enabled):
 
 def run(binary):
     with ThreadingHTTPServer(('127.0.0.1', 0), LoginSite) as site:
-        site.tokens = {name: secrets.token_hex(20) for name in ('alice', 'bob')}
+        site.tokens = {name: secrets.token_hex(20) for name in ('alice', 'bob', 'casey')}
         site.visits = queue.Queue()
         thread = threading.Thread(target=site.serve_forever, daemon=True)
         thread.start()
@@ -109,6 +119,11 @@ def run(binary):
                         ('Work', 'who/work-3', 'work-3', 'alice'),
                         ('Personal', 'who/personal-2', 'personal-2', 'bob'),
                         (None, 'who/ordinary-2', 'ordinary-2', 'signed out'),
+                        ('Work', 'spawn/opener', 'opener', 'alice'),
+                        ('Personal', 'spawn/noopener', 'noopener', 'bob'),
+                        ('QA.v2/team', 'who/custom-1', 'custom-1', 'signed out'),
+                        ('QA.v2/team', 'login/casey', 'casey-after-login', 'casey'),
+                        ('QA.v2/team', 'who/custom-2', 'custom-2', 'casey'),
                     ]
                     for container, path, label, expected in cases:
                         args = [f'--container={container}'] if container else []

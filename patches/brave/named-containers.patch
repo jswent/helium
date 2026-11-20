@@ -24,7 +24,7 @@ You can obtain one at https://mozilla.org/MPL/2.0/.
       "prevent access to networks that require a proxy. Helium flag.",
       kOsAll, SINGLE_VALUE_TYPE(switches::kNoProxyServer)},
 +    {"helium-named-containers", "Named containers",
-+     "Open a website with --container=NAME and its URL to use a separate "
++     "Launch with --container=NAME and an optional web URL to use a separate "
 +     "login. Tabs opened with the same name share cookies and site data.",
 +     kOsDesktop,
 +     FEATURE_VALUE_TYPE(helium::containers::kHeliumNamedContainers)},
@@ -33,11 +33,27 @@ You can obtain one at https://mozilla.org/MPL/2.0/.
       "Enables an option to apply native materials to the browser frame "
 --- a/chrome/browser/prefs/browser_prefs.cc
 +++ b/chrome/browser/prefs/browser_prefs.cc
-@@ -2050,6 +2050,7 @@
+@@ -15,6 +15,7 @@
+ #include "base/json/values_util.h"
+ #include "base/time/time.h"
+ #include "base/trace_event/trace_event.h"
++#include "base/values.h"
+ #include "build/android_buildflags.h"
+ #include "build/branding_buildflags.h"
+ #include "build/build_config.h"
+@@ -2050,6 +2051,15 @@
  void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
                            const std::string& locale) {
    TRACE_EVENT0("browser", "chrome::RegisterProfilePrefs");
-+  registry->RegisterDictionaryPref(prefs::kHeliumNamedContainers);
++  // Preserve the IDs of Brave's four built-in containers. User-created names
++  // receive a UUID on first use in this profile.
++  base::DictValue named_containers;
++  named_containers.Set("Personal", "0053d88e-7b26-4bfa-9175-783e1bfcba97");
++  named_containers.Set("Work", "2c2777a1-80b3-4b26-b629-ae1aefd9f272");
++  named_containers.Set("Social", "cfc3ee90-a163-4bd0-99ff-f0a472dda804");
++  named_containers.Set("School", "f5d49086-1a5f-42b0-83fa-58682e5b8ba5");
++  registry->RegisterDictionaryPref(prefs::kHeliumNamedContainers,
++                                   std::move(named_containers));
    // User prefs. Please keep this list alphabetized.
    AccessibilityLabelsService::RegisterProfilePrefs(registry);
    registry->RegisterBooleanPref(prefs::kRendererAccessibilityEnabled, true);
@@ -271,7 +287,7 @@ You can obtain one at https://mozilla.org/MPL/2.0/.
  #include "build/build_config.h"
  #include "chrome/browser/first_run/first_run.h"
  #include "chrome/browser/prefs/session_startup_pref.h"
-@@ -39,12 +41,14 @@
+@@ -39,15 +41,18 @@
  #include "chrome/common/pref_names.h"
  #include "chrome/common/url_constants.h"
  #include "components/prefs/pref_service.h"
@@ -286,7 +302,11 @@ You can obtain one at https://mozilla.org/MPL/2.0/.
  #include "content/public/common/url_constants.h"
  #include "net/base/filename_util.h"
  #include "net/base/url_util.h"
-@@ -70,6 +74,25 @@
++#include "url/url_constants.h"
+ 
+ #if BUILDFLAG(IS_WIN)
+ #include "base/strings/string_util_win.h"
+@@ -70,6 +75,25 @@
  #endif
  
  namespace {
@@ -312,7 +332,7 @@ You can obtain one at https://mozilla.org/MPL/2.0/.
  
  // Attempts to find an existing, non-empty tabbed browser for this profile.
  bool ProfileHasOtherTabbedBrowser(Profile* profile) {
-@@ -151,7 +174,18 @@
+@@ -151,7 +175,21 @@
      const base::FilePath& cur_dir,
      Profile* profile) const {
    StartupTabs result;
@@ -329,26 +349,34 @@ You can obtain one at https://mozilla.org/MPL/2.0/.
 +  }
 +
 +  std::optional<content::StoragePartitionConfig> partition;
++  if (requested_container) {
++    partition = GetOrCreateNamedPartition(profile, name);
++  }
    for (const auto& arg : command_line.GetArgs()) {
      ParsedCommandLineTabArg parsed_arg =
          ParseTabFromCommandLineArg(arg, cur_dir, profile);
-@@ -162,8 +196,17 @@
+@@ -162,11 +200,19 @@
               base::NotFatalUntil::M162);
  
      if (parsed_arg.tab_parsed == CommandLineTabsPresent::kYes) {
-+      if (requested_container) {
-+        if (!parsed_arg.tab_url.SchemeIsHTTPOrHTTPS()) {
-+          continue;
-+        }
-+        if (!partition) {
-+          partition = GetOrCreateNamedPartition(profile, name);
-+        }
++      if (partition && !parsed_arg.tab_url.SchemeIsHTTPOrHTTPS()) {
++        continue;
 +      }
        result.emplace_back(std::move(parsed_arg.tab_url),
                            parsed_arg.is_untrusted_launch);
+-    }
+-  }
+-
 +      result.back().storage_partition_config = partition;
-     }
-   }
++    }
++  }
++
++  if (partition && result.empty()) {
++    result.emplace_back(GURL(url::kAboutBlankURL));
++    result.back().storage_partition_config = partition;
++  }
+   return result;
+ }
  
 --- a/chrome/common/pref_names.h
 +++ b/chrome/common/pref_names.h
