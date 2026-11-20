@@ -93,6 +93,11 @@ def running_browser(binary, directory, *startup_args, enabled):
                 process.wait()
 
 
+def page_urls(port):
+    with urlopen(f'http://127.0.0.1:{port}/json/list', timeout=5) as response:
+        return {tab['url'] for tab in json.load(response) if tab['type'] == 'page'}
+
+
 def expect_visit(site, label, expected):
     try:
         visit = site.visits.get(timeout=20)
@@ -143,15 +148,34 @@ def run(binary):
                     expected_tabs.add(f'{origin}/who/alice-after-login')
                     deadline = time.monotonic() + 10
                     while time.monotonic() < deadline:
-                        with urlopen(f'http://127.0.0.1:{port}/json/list', timeout=5) as response:
-                            tabs = json.load(response)
-                        targets = {tab['url'] for tab in tabs if tab['type'] == 'page'}
+                        targets = page_urls(port)
                         if expected_tabs <= targets:
                             break
                         time.sleep(0.1)
                     else:
                         raise AssertionError(f'Missing live tabs: {expected_tabs - targets}')
-            # A second, fresh profile checks the shipped default. An explicit
+            # A named launch without a URL must keep its partition on the
+            # first navigation. --same-tab navigates the existing New Tab page.
+            with tempfile.TemporaryDirectory(prefix='helium-newtab-') as tmp:
+                with running_browser(binary, tmp, '--container=Work',
+                                     enabled=True) as (command, port):
+                    deadline = time.monotonic() + 20
+                    while time.monotonic() < deadline:
+                        if page_urls(port) & {'chrome://newtab/', 'chrome://new-tab-page/',
+                                              'helium://newtab/', 'helium://new-tab-page/'}:
+                            break
+                        time.sleep(0.1)
+                    else:
+                        raise AssertionError('Named New Tab page did not open')
+                    for switch, path, label, expected in [
+                            ('--same-tab', 'login/alice', 'alice-after-login', 'alice'),
+                            ('--container=Work', 'who/work-from-newtab', 'work-from-newtab', 'alice'),
+                            (None, 'who/ordinary-from-newtab', 'ordinary-from-newtab', 'signed out')]:
+                        args = [switch] if switch else []
+                        subprocess.run(command + args + [f'{origin}/{path}'], check=True,
+                                       timeout=25, stdout=subprocess.DEVNULL, cwd=tmp)
+                        expect_visit(site, label, expected)
+            # A fresh profile checks the shipped default. An explicit
             # container request must not silently sign in through the ordinary jar.
             with tempfile.TemporaryDirectory(prefix='helium-flag-off-') as tmp:
                 with running_browser(binary, tmp, 'about:blank', enabled=False) as (command, _):
