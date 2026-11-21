@@ -1,0 +1,1130 @@
+Show Brave-style container accents in Helium's horizontal and vertical tab strips.
+Share picker icons and temporary identicons. Keep the tab favicon and title intact.
+
+--- a/chrome/app/generated_resources.grd
++++ b/chrome/app/generated_resources.grd
+@@ -20647,6 +20647,15 @@
+     <message name="IDS_OSCRYPTASYNC_AVAILABILITY_INFOBAR_BUTTON" desc="The text of the button to proceed with relaunching the entire browser to resolve keychain permission issues.">
+       Relaunch
+     </message>
++    <message name="IDS_HELIUM_TAB_CONTAINER_DESCRIPTION" desc="Screen reader description of the browsing container assigned to a tab.">
++      Container <ph name="CONTAINER_NAME">$1<ex>Work</ex></ph>
++    </message>
++    <message name="IDS_HELIUM_TAB_TEMPORARY_CONTAINER_DESCRIPTION" desc="Screen reader description of the temporary browsing container assigned to a tab.">
++      Temporary container <ph name="CONTAINER_NAME">$1<ex>Meadow river</ex></ph>
++    </message>
++    <message name="IDS_HELIUM_TAB_UNKNOWN_CONTAINER" desc="Label for a container tab whose display settings are unavailable.">
++      Unknown container
++    </message>
+     <message name="IDS_HELIUM_CONTAINER_TITLE" desc="Name of the container settings page.">
+       Containers
+     </message>
+--- a/chrome/browser/containers/named_containers.cc
++++ b/chrome/browser/containers/named_containers.cc
+@@ -68,6 +68,26 @@
+   return std::nullopt;
+ }
+ 
++Entry NamedEntry(const std::string& id,
++                 const std::string& name,
++                 const base::DictValue& appearance) {
++  Entry entry{id, name, Icon::kPerson, 0x3971ce};
++  if (auto it = std::ranges::find(kDefaults, id, &DefaultStyle::id);
++      it != kDefaults.end()) {
++    entry.icon = it->icon;
++    entry.color = it->color;
++  }
++  if (const auto* style = appearance.FindDict(id)) {
++    int icon = style->FindInt("icon").value_or(-1);
++    int color = style->FindInt("color").value_or(-1);
++    if (ValidStyle(icon, color)) {
++      entry.icon = static_cast<Icon>(icon);
++      entry.color = color;
++    }
++  }
++  return entry;
++}
++
+ }  // namespace
+ 
+ bool IsAvailable(Profile* profile) {
+@@ -87,21 +107,7 @@
+     if (!id || !base::Uuid::ParseLowercase(*id).is_valid()) {
+       continue;
+     }
+-    Entry entry{*id, item.first, Icon::kPerson, 0x3971ce};
+-    if (auto it = std::ranges::find(kDefaults, *id, &DefaultStyle::id);
+-        it != kDefaults.end()) {
+-      entry.icon = it->icon;
+-      entry.color = it->color;
+-    }
+-    if (const auto* style = appearance.FindDict(*id)) {
+-      int icon = style->FindInt("icon").value_or(-1);
+-      int color = style->FindInt("color").value_or(-1);
+-      if (ValidStyle(icon, color)) {
+-        entry.icon = static_cast<Icon>(icon);
+-        entry.color = color;
+-      }
+-    }
+-    entries.push_back(std::move(entry));
++    entries.push_back(NamedEntry(*id, item.first, appearance));
+   }
+   std::ranges::stable_sort(entries, {}, [](const Entry& entry) {
+     return std::ranges::find(kDefaults, entry.id, &DefaultStyle::id) -
+@@ -164,6 +170,20 @@
+                       .Set("color", base::RandomChoice(kColors)));
+   return content::StoragePartitionConfig::Create(profile, kPartitionDomain, id,
+                                                  false);
++}
++
++std::optional<Entry> FindById(Profile* profile, const std::string& id) {
++  if (!IsAvailable(profile)) {
++    return std::nullopt;
++  }
++  if (id.starts_with("t-")) {
++    return FindTemporary(profile, id);
++  }
++  const auto name = NameForId(profile, id);
++  if (!name) {
++    return std::nullopt;
++  }
++  return NamedEntry(id, *name, profile->GetPrefs()->GetDict(kAppearancePref));
+ }
+ 
+ bool HasId(Profile* profile, const std::string& id) {
+--- a/chrome/browser/containers/named_containers.h
++++ b/chrome/browser/containers/named_containers.h
+@@ -40,6 +40,7 @@
+ 
+ bool IsAvailable(Profile* profile);
+ std::vector<Entry> List(Profile* profile);
++std::optional<Entry> FindById(Profile* profile, const std::string& id);
+ std::optional<Entry> FindTemporary(Profile* profile, const std::string& id);
+ // An empty name always creates a new temporary container. An explicit name
+ // reuses its local temporary session, independently of named containers.
+--- a/chrome/browser/ui/tabs/BUILD.gn
++++ b/chrome/browser/ui/tabs/BUILD.gn
+@@ -168,6 +168,23 @@
+     ]
+   }
+ 
++  source_set("container_foreground_icon") {
++    sources = [
++      "container_foreground_icon.cc",
++      "container_foreground_icon.h",
++    ]
++    public_deps = [
++      "//skia",
++      "//ui/gfx",
++    ]
++    deps = [
++      "//base",
++      "//chrome/app/vector_icons",
++      "//chrome/browser/containers",
++      "//components/vector_icons",
++    ]
++  }
++
+   source_set("tab_menu_impl") {
+     sources = [
+       "contextual_tasks_tab_sub_menu_model.cc",
+@@ -178,6 +195,7 @@
+     ]
+ 
+     deps = [
++      ":container_foreground_icon",
+       ":tab_menu",
+       ":tab_model",
+       ":tab_strip",
+@@ -1031,10 +1049,13 @@
+       sources += [ "named_container_ui_browsertest.mm" ]
+       deps += [
+         "//chrome/browser/containers",
++        "//chrome/browser/ui/views/frame",
+         "//chrome/browser/ui/views/frame:browser_view_header",
+         "//chrome/browser/ui/views/tabs/shared",
++        "//skia",
+         "//ui/menus",
+         "//ui/views",
++        "//ui/views:test_support",
+       ]
+     }
+   }
+--- /dev/null
++++ b/chrome/browser/ui/tabs/container_foreground_icon.cc
+@@ -0,0 +1,123 @@
++// Copyright (c) 2025-2026 The Brave Authors. All rights reserved.
++// This Source Code Form is subject to the terms of the Mozilla Public
++// License, v. 2.0. If a copy of the MPL was not distributed with this file,
++// You can obtain one at https://mozilla.org/MPL/2.0/.
++
++#include "chrome/browser/ui/tabs/container_foreground_icon.h"
++
++#include <memory>
++#include <string_view>
++
++#include "base/hash/hash.h"
++#include "chrome/app/vector_icons/vector_icons.h"
++#include "chrome/browser/containers/named_containers.h"
++#include "components/vector_icons/vector_icons.h"
++#include "ui/gfx/canvas.h"
++#include "ui/gfx/image/canvas_image_source.h"
++#include "ui/gfx/paint_vector_icon.h"
++
++namespace helium::containers {
++namespace {
++// Symmetric identicon image generator for temporary containers.
++class TemporaryContainerForegroundIconImageSource
++    : public gfx::CanvasImageSource {
++ public:
++  TemporaryContainerForegroundIconImageSource(std::string_view container_id,
++                                              int icon_size,
++                                              SkColor color)
++      : gfx::CanvasImageSource(gfx::Size(icon_size, icon_size)),
++        seed_(base::PersistentHash(container_id)),
++        color_(color) {}
++
++  void Draw(gfx::Canvas* canvas) override {
++    uint32_t pattern = (seed_ ^ (seed_ >> 15)) & 0x7fff;
++    if (!pattern) {
++      pattern = 1u << 8;  // An all-zero hash still needs a visible glyph.
++    }
++
++    constexpr int kGrid = 5;
++    // Match the visual safe area used by 16x16 vector icons (~12px-ish content)
++    // so temporary identicons feel balanced next to them.
++    constexpr float kContentBoxRatio = 12.0f / 16.0f;
++    // Keep a little spacing between tiles to avoid a too-heavy blob.
++    constexpr float kCellFillRatio = 0.9f;
++    const float icon_size = size().width();
++    const float content_box_size = icon_size * kContentBoxRatio;
++    const float content_box_inset = (icon_size - content_box_size) / 2.0f;
++    const float cell = content_box_size / static_cast<float>(kGrid);
++    const float cell_size = cell * kCellFillRatio;
++    const float cell_inset = (cell - cell_size) / 2.0f;
++
++    cc::PaintFlags cell_flags;
++    cell_flags.setAntiAlias(true);
++    cell_flags.setColor(color_);
++
++    // One row per horizontal band in the 5x5 grid; y is the top of the cell
++    // for this row inside the content box.
++    for (int row = 0; row < kGrid; ++row) {
++      const float y = content_box_inset + row * cell + cell_inset;
++      // Only the left three columns are encoded in the pattern (15 bits);
++      // the right two are filled by mirroring for left-right symmetry.
++      for (int col = 0; col < 3; ++col) {
++        const int bit_index = row * 3 + col;
++        // Skip the cell if the bit is not set.
++        if (((pattern >> bit_index) & 1u) == 0u) {
++          continue;
++        }
++
++        // Render the cell and its mirror on the opposite side.
++        const float x = content_box_inset + col * cell + cell_inset;
++        canvas->DrawRect(gfx::RectF(x, y, cell_size, cell_size), cell_flags);
++
++        // Mirror the cell into the opposite side.
++        const int mirror_col = kGrid - 1 - col;
++        if (mirror_col != col) {
++          const float mirror_x =
++              content_box_inset + mirror_col * cell + cell_inset;
++          canvas->DrawRect(gfx::RectF(mirror_x, y, cell_size, cell_size),
++                           cell_flags);
++        }
++      }
++    }
++  }
++
++ private:
++  const uint32_t seed_;
++  const SkColor color_;
++};
++
++const gfx::VectorIcon& VectorIconForContainer(Icon icon) {
++  switch (icon) {
++    case Icon::kPerson:
++      return kPersonFilledIcon;
++    case Icon::kWork:
++      return kLeoContainerWorkIcon;
++    case Icon::kGroup:
++      return kGroupCustomIcon;
++    case Icon::kStar:
++      return vector_icons::kStarFilledIcon;
++    case Icon::kHome:
++      return kLeoContainerPersonalIcon;
++    case Icon::kSocial:
++      return kLeoContainerSocialIcon;
++    case Icon::kSchool:
++      return kLeoContainerSchoolIcon;
++    case Icon::kTravel:
++      return vector_icons::kLocationOnIcon;
++  }
++  NOTREACHED();
++}
++}  // namespace
++
++gfx::ImageSkia ContainerForegroundIcon(const Entry& entry,
++                                       int size,
++                                       SkColor color) {
++  if (entry.id.starts_with("t-")) {
++    return gfx::ImageSkia(
++        std::make_unique<TemporaryContainerForegroundIconImageSource>(
++            entry.id, size, color),
++        gfx::Size(size, size));
++  }
++  return gfx::CreateVectorIcon(VectorIconForContainer(entry.icon), size, color);
++}
++}  // namespace helium::containers
+--- /dev/null
++++ b/chrome/browser/ui/tabs/container_foreground_icon.h
+@@ -0,0 +1,20 @@
++// Copyright (c) 2025-2026 The Brave Authors. All rights reserved.
++// This Source Code Form is subject to the terms of the Mozilla Public
++// License, v. 2.0. If a copy of the MPL was not distributed with this file,
++// You can obtain one at https://mozilla.org/MPL/2.0/.
++
++#ifndef CHROME_BROWSER_UI_TABS_CONTAINER_FOREGROUND_ICON_H_
++#define CHROME_BROWSER_UI_TABS_CONTAINER_FOREGROUND_ICON_H_
++
++#include "third_party/skia/include/core/SkColor.h"
++#include "ui/gfx/image/image_skia.h"
++
++namespace helium::containers {
++struct Entry;
++
++gfx::ImageSkia ContainerForegroundIcon(const Entry& entry,
++                                       int size,
++                                       SkColor color);
++}  // namespace helium::containers
++
++#endif  // CHROME_BROWSER_UI_TABS_CONTAINER_FOREGROUND_ICON_H_
+--- a/chrome/browser/ui/tabs/named_container_menu_model.cc
++++ b/chrome/browser/ui/tabs/named_container_menu_model.cc
+@@ -9,9 +9,7 @@
+ #include <set>
+ #include <utility>
+ 
+-#include "base/hash/hash.h"
+ #include "base/strings/utf_string_conversions.h"
+-#include "chrome/app/vector_icons/vector_icons.h"
+ #include "chrome/browser/containers/named_containers.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/ui/browser_tabstrip.h"
+@@ -19,20 +17,17 @@
+ #include "chrome/browser/ui/chrome_pages.h"
+ #include "chrome/browser/ui/navigator/browser_navigator.h"
+ #include "chrome/browser/ui/navigator/browser_navigator_params.h"
++#include "chrome/browser/ui/tabs/container_foreground_icon.h"
+ #include "chrome/common/webui_url_constants.h"
+ #include "chrome/grit/generated_resources.h"
+ #include "components/tabs/public/tab_interface.h"
+-#include "components/vector_icons/vector_icons.h"
+ #include "content/public/browser/security_principal.h"
+ #include "content/public/browser/site_instance.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/common/helium_named_containers.h"
+ #include "ui/base/models/image_model.h"
+-#include "ui/gfx/canvas.h"
+-#include "ui/gfx/image/canvas_image_source.h"
+ #include "ui/gfx/image/image_skia.h"
+ #include "ui/gfx/image/image_skia_operations.h"
+-#include "ui/gfx/paint_vector_icon.h"
+ 
+ namespace {
+ // Disjoint from the tab group's, split view's and other tab submenus.
+@@ -58,93 +53,6 @@
+   return {};
+ }
+ 
+-// Symmetric identicon image generator for temporary containers.
+-class TemporaryContainerForegroundIconImageSource
+-    : public gfx::CanvasImageSource {
+- public:
+-  TemporaryContainerForegroundIconImageSource(std::string_view container_id,
+-                                              int icon_size,
+-                                              SkColor color)
+-      : gfx::CanvasImageSource(gfx::Size(icon_size, icon_size)),
+-        seed_(base::PersistentHash(container_id)),
+-        color_(color) {}
+-
+-  void Draw(gfx::Canvas* canvas) override {
+-    const uint32_t pattern = (seed_ ^ (seed_ >> 15)) & 0x7fff;
+-
+-    constexpr int kGrid = 5;
+-    // Match the visual safe area used by 16x16 vector icons (~12px-ish content)
+-    // so temporary identicons feel balanced next to them.
+-    constexpr float kContentBoxRatio = 12.0f / 16.0f;
+-    // Keep a little spacing between tiles to avoid a too-heavy blob.
+-    constexpr float kCellFillRatio = 0.9f;
+-    const float icon_size = size().width();
+-    const float content_box_size = icon_size * kContentBoxRatio;
+-    const float content_box_inset = (icon_size - content_box_size) / 2.0f;
+-    const float cell = content_box_size / static_cast<float>(kGrid);
+-    const float cell_size = cell * kCellFillRatio;
+-    const float cell_inset = (cell - cell_size) / 2.0f;
+-
+-    cc::PaintFlags cell_flags;
+-    cell_flags.setAntiAlias(true);
+-    cell_flags.setColor(color_);
+-
+-    // One row per horizontal band in the 5x5 grid; y is the top of the cell
+-    // for this row inside the content box.
+-    for (int row = 0; row < kGrid; ++row) {
+-      const float y = content_box_inset + row * cell + cell_inset;
+-      // Only the left three columns are encoded in the pattern (15 bits);
+-      // the right two are filled by mirroring for left-right symmetry.
+-      for (int col = 0; col < 3; ++col) {
+-        const int bit_index = row * 3 + col;
+-        // Skip the cell if the bit is not set.
+-        if (((pattern >> bit_index) & 1u) == 0u) {
+-          continue;
+-        }
+-
+-        // Render the cell and its mirror on the opposite side.
+-        const float x = content_box_inset + col * cell + cell_inset;
+-        canvas->DrawRect(gfx::RectF(x, y, cell_size, cell_size), cell_flags);
+-
+-        // Mirror the cell into the opposite side.
+-        const int mirror_col = kGrid - 1 - col;
+-        if (mirror_col != col) {
+-          const float mirror_x =
+-              content_box_inset + mirror_col * cell + cell_inset;
+-          canvas->DrawRect(gfx::RectF(mirror_x, y, cell_size, cell_size),
+-                           cell_flags);
+-        }
+-      }
+-    }
+-  }
+-
+- private:
+-  const uint32_t seed_;
+-  const SkColor color_;
+-};
+-
+-const gfx::VectorIcon& MenuIcon(helium::containers::Icon icon) {
+-  using Icon = helium::containers::Icon;
+-  switch (icon) {
+-    case Icon::kPerson:
+-      return kPersonFilledIcon;
+-    case Icon::kWork:
+-      return kLeoContainerWorkIcon;
+-    case Icon::kGroup:
+-      return kGroupCustomIcon;
+-    case Icon::kStar:
+-      return vector_icons::kStarFilledIcon;
+-    case Icon::kHome:
+-      return kLeoContainerPersonalIcon;
+-    case Icon::kSocial:
+-      return kLeoContainerSocialIcon;
+-    case Icon::kSchool:
+-      return kLeoContainerSchoolIcon;
+-    case Icon::kTravel:
+-      return vector_icons::kLocationOnIcon;
+-  }
+-  NOTREACHED();
+-}
+ }  // namespace
+ 
+ NamedContainerMenuModel::NamedContainerMenuModel(
+@@ -199,12 +107,7 @@
+     AddCheckItem(command, base::UTF8ToUTF16(entry.name));
+     SetMayHaveMnemonicsAt(GetItemCount() - 1, false);
+     gfx::ImageSkia foreground =
+-        entry.id.starts_with("t-")
+-            ? gfx::ImageSkia(
+-                  std::make_unique<TemporaryContainerForegroundIconImageSource>(
+-                      entry.id, 12, SK_ColorWHITE),
+-                  gfx::Size(12, 12))
+-            : gfx::CreateVectorIcon(MenuIcon(entry.icon), 12, SK_ColorWHITE);
++        helium::containers::ContainerForegroundIcon(entry, 12, SK_ColorWHITE);
+     SetIcon(GetItemCount() - 1,
+             ui::ImageModel::FromImageSkia(
+                 gfx::ImageSkiaOperations::CreateImageWithCircleBackground(
+--- a/chrome/browser/ui/tabs/named_container_ui_browsertest.mm
++++ b/chrome/browser/ui/tabs/named_container_ui_browsertest.mm
+@@ -4,7 +4,11 @@
+ 
+ #import <Cocoa/Cocoa.h>
+ 
++#include <algorithm>
++
+ #include "base/strings/sys_string_conversions.h"
++#include "base/strings/utf_string_conversions.h"
++#include "base/test/run_until.h"
+ #include "base/test/scoped_feature_list.h"
+ #include "chrome/browser/containers/named_containers.h"
+ #include "chrome/browser/ui/browser_element_identifiers.h"
+@@ -13,6 +17,7 @@
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #include "chrome/browser/ui/tabs/vertical_tab_strip_state_controller.h"
+ #include "chrome/browser/ui/views/frame/browser_view.h"
++#include "chrome/browser/ui/views/frame/tab_strip_region_view.h"
+ #include "chrome/browser/ui/views/tabs/shared/new_tab_button_menu_model.h"
+ #include "chrome/test/base/in_process_browser_test.h"
+ #include "chrome/test/base/ui_test_utils.h"
+@@ -23,11 +28,33 @@
+ #include "content/public/test/browser_test.h"
+ #include "content/public/test/browser_test_utils.h"
+ #include "net/test/embedded_test_server/embedded_test_server.h"
++#include "third_party/skia/include/core/SkBitmap.h"
+ #include "ui/base/mojom/menu_source_type.mojom.h"
+ #import "ui/menus/cocoa/menu_controller.h"
++#include "ui/views/accessibility/view_accessibility.h"
+ #include "ui/views/interaction/element_tracker_views.h"
++#include "ui/views/test/views_drawing_test_utils.h"
+ 
+ namespace {
++int CountLeadingPixels(views::View* tab, SkColor color) {
++  // Views paints each composited layer relative to its own root.
++  views::View* root = tab;
++  while (root->parent() && !root->layer()) {
++    root = root->parent();
++  }
++  const auto bitmap = views::test::PaintViewToBitmap(root);
++  gfx::Rect bounds = views::View::ConvertRectToTarget(
++      tab, root, gfx::Rect(std::min(36, tab->width()), tab->height()));
++  bounds.Intersect(gfx::Rect(bitmap.width(), bitmap.height()));
++  int count = 0;
++  for (int y = bounds.y(); y < bounds.bottom(); ++y) {
++    for (int x = bounds.x(); x < bounds.right(); ++x) {
++      count += bitmap.getColor(x, y) == color;
++    }
++  }
++  return count;
++}
++
+ class NamedContainerUiTest : public InProcessBrowserTest {
+  public:
+   NamedContainerUiTest() : NamedContainerUiTest(true) {}
+@@ -110,6 +137,86 @@
+     const NSInteger index = [shown indexOfItemWithTitle:title];
+     ASSERT_GE(index, 0);
+     [shown performActionForItemAtIndex:index];
++  }
++
++  views::View* TabViewFor(tabs::TabHandle handle) {
++    return BrowserView::GetBrowserViewForBrowser(browser())
++        ->tab_strip_view()
++        ->GetTabAnchorView(handle);
++  }
++
++  void CheckContainerAccents(bool vertical) {
++    if (vertical) {
++      tabs::VerticalTabStripStateController::From(browser())
++          ->SetVerticalTabsEnabled(true);
++      RunScheduledLayouts();
++    }
++    auto ordinary = strip()->GetActiveTab()->GetHandle();
++    ASSERT_NO_FATAL_FAILURE(SelectPlus(@"Personal", vertical));
++    auto personal = strip()->GetActiveTab()->GetHandle();
++    ASSERT_NO_FATAL_FAILURE(SelectPlus(@"Work", vertical));
++    auto work = strip()->GetActiveTab()->GetHandle();
++    const auto work_id = active()
++                             ->GetSiteInstance()
++                             ->GetSecurityPrincipal()
++                             .GetStoragePartitionConfig()
++                             .partition_name();
++    const auto check = [&](tabs::TabHandle handle, std::u16string name) {
++      return base::test::RunUntil([&] {
++        auto* view = TabViewFor(handle);
++        return view && view->IsDrawn() && view->width() > 0 &&
++               view->GetViewAccessibility().GetCachedDescription() == name;
++      });
++    };
++    ASSERT_TRUE(check(ordinary, u""));
++    ASSERT_TRUE(check(personal, u"Container Personal"));
++    ASSERT_TRUE(check(work, u"Container Work"));
++    constexpr SkColor kWorkRed = SkColorSetRGB(0xff, 0x3c, 0x36);
++    ASSERT_TRUE(base::test::RunUntil(
++        [&] { return CountLeadingPixels(TabViewFor(work), kWorkRed) > 100; }));
++    EXPECT_EQ(0, CountLeadingPixels(TabViewFor(ordinary), kWorkRed));
++    EXPECT_EQ(0, CountLeadingPixels(TabViewFor(personal), kWorkRed));
++
++    ASSERT_NO_FATAL_FAILURE(SelectPlus(@"New Temporary Container", vertical));
++    auto temporary = strip()->GetActiveTab()->GetHandle();
++    const auto temp = helium::containers::FindTemporary(
++        browser()->GetProfile(), active()
++                                     ->GetSiteInstance()
++                                     ->GetSecurityPrincipal()
++                                     .GetStoragePartitionConfig()
++                                     .partition_name());
++    ASSERT_TRUE(temp);
++    ASSERT_TRUE(check(temporary,
++                      u"Temporary container " + base::UTF8ToUTF16(temp->name)));
++
++    const SkColor temp_color = SkColorSetA(temp->color, SK_AlphaOPAQUE);
++    ASSERT_TRUE(base::test::RunUntil([&] {
++      return CountLeadingPixels(TabViewFor(temporary), temp_color) > 100;
++    }));
++    strip()->ActivateTabAt(strip()->GetIndexOfTab(work.Get()));
++    EXPECT_TRUE(helium::containers::Save(
++                    browser()->GetProfile(), work_id, "Studio",
++                    static_cast<int>(helium::containers::Icon::kStar), 0x2fab5f)
++                    .empty());
++    ASSERT_TRUE(check(work, u"Container Studio"));
++    constexpr SkColor kStudioGreen = SkColorSetRGB(0x2f, 0xab, 0x5f);
++    EXPECT_GT(CountLeadingPixels(TabViewFor(work), kStudioGreen), 100);
++    EXPECT_EQ(0, CountLeadingPixels(TabViewFor(work), kWorkRed));
++    if (vertical) {
++      auto* controller = tabs::VerticalTabStripStateController::From(browser());
++      controller->SetExpandOnHoverEnabled(false);
++      controller->RequestCollapse(true);
++      ASSERT_TRUE(base::test::RunUntil([&] {
++        return controller->IsCollapsed() && TabViewFor(work)->width() < 64 &&
++               CountLeadingPixels(TabViewFor(work), kStudioGreen) > 10;
++      }));
++    }
++    strip()->SetTabPinned(strip()->GetIndexOfTab(work.Get()), true);
++    RunScheduledLayouts();
++    ASSERT_TRUE(check(work, u"Container Studio"));
++    ASSERT_TRUE(base::test::RunUntil([&] {
++      return CountLeadingPixels(TabViewFor(work), kStudioGreen) > 10;
++    }));
+   }
+ 
+   void InstallSelectors(content::WebContents* settings) {
+@@ -218,6 +325,10 @@
+     })()
+   )JS"));
+   strip()->ActivateTabAt(strip()->GetIndexOfWebContents(first));
++  EXPECT_EQ(u"Unknown container",
++            TabViewFor(strip()->GetActiveTab()->GetHandle())
++                ->GetViewAccessibility()
++                .GetCachedDescription());
+   EXPECT_FALSE(Select("Renamed UI test", false));
+   EXPECT_EQ("", content::EvalJs(first, "document.cookie"));
+   EXPECT_EQ(true,
+@@ -302,6 +413,14 @@
+   EXPECT_TRUE(config.partition_name().starts_with("t-"));
+ }
+ 
++IN_PROC_BROWSER_TEST_F(NamedContainerUiTest, HorizontalTabAccents) {
++  CheckContainerAccents(false);
++}
++
++IN_PROC_BROWSER_TEST_F(NamedContainerUiTest, VerticalTabAccents) {
++  CheckContainerAccents(true);
++}
++
+ class NamedContainerUiDisabledTest : public NamedContainerUiTest {
+  public:
+   NamedContainerUiDisabledTest() : NamedContainerUiTest(false) {}
+@@ -310,6 +429,10 @@
+ IN_PROC_BROWSER_TEST_F(NamedContainerUiDisabledTest, HidesSettingsAndMenu) {
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(
+       browser(), GURL("chrome://settings/containers")));
++  EXPECT_TRUE(TabViewFor(strip()->GetActiveTab()->GetHandle())
++                  ->GetViewAccessibility()
++                  .GetCachedDescription()
++                  .empty());
+   InstallSelectors(active());
+   EXPECT_EQ(false, content::EvalJs(active(), R"JS(
+     (async () => {
+--- a/chrome/browser/ui/views/tabs/BUILD.gn
++++ b/chrome/browser/ui/views/tabs/BUILD.gn
+@@ -141,7 +141,11 @@
+ }
+ 
+ source_set("tab_style_views_impl") {
+-  sources = [ "tab_style_views.cc" ]
++  sources = [
++    "container_tab_accent.cc",
++    "container_tab_accent.h",
++    "tab_style_views.cc",
++  ]
+ 
+   deps = [
+     ":base",
+@@ -151,17 +155,27 @@
+     "//base",
+     "//base:i18n",
+     "//cc/paint",
++    "//chrome/app:generated_resources",
+     "//chrome/app/theme:theme_resources",
++    "//chrome/browser/containers",
++    "//chrome/browser/profiles:profile",
+     "//chrome/browser/themes",
+     "//chrome/browser/ui:layout_constants",
+     "//chrome/browser/ui:ui_features",
+     "//chrome/browser/ui/browser_window",
+     "//chrome/browser/ui/color:color_headers",
+     "//chrome/browser/ui/tabs",
++    "//chrome/browser/ui/tabs:container_foreground_icon",
+     "//chrome/browser/ui/views/tabs/common:impl",
+     "//chrome/browser/ui/views/tabs/tab",
++    "//chrome/common:constants",
++    "//components/prefs",
++    "//components/tabs:public",
++    "//content/public/browser",
++    "//content/public/common",
+     "//skia",
+     "//ui/base",
++    "//ui/color",
+     "//ui/gfx",
+     "//ui/gfx/animation",
+     "//ui/gfx/geometry",
+--- a/chrome/browser/ui/views/tabs/common/horizontal_tab_style_views.cc
++++ b/chrome/browser/ui/views/tabs/common/horizontal_tab_style_views.cc
+@@ -72,7 +72,8 @@
+ 
+ HorizontalTabStyleViews::HorizontalTabStyleViews(
+     std::unique_ptr<TabStyleViewDelegate> delegate)
+-    : delegate_(std::move(delegate)) {
++    : TabStyleViews(TabStripOrientation::kHorizontal),
++      delegate_(std::move(delegate)) {
+   CHECK(delegate_);
+   // TODO(dfried): create a new STYLE_PROMINENT or similar to use instead of
+   // repurposing CONTEXT_BUTTON_MD.
+--- a/chrome/browser/ui/views/tabs/common/tab_view.cc
++++ b/chrome/browser/ui/views/tabs/common/tab_view.cc
+@@ -843,11 +843,10 @@
+ void TabView::OnPaint(gfx::Canvas* canvas) {
+   // Split pinned tabs have a merged background that is rendered in
+   // `SplitTabView`.
+-  if (pinned_ && split_) {
+-    return;
+-  }
+-
+-  tab_styling()->PaintTab(canvas);
++  if (!(pinned_ && split_)) {
++    tab_styling()->PaintTab(canvas);
++  }
++  tab_styling()->PaintContainerAccent(canvas);
+ 
+   views::View::OnPaint(canvas);
+ }
+@@ -1224,6 +1223,7 @@
+ 
+   tabs::TabInterface* tab = const_cast<tabs::TabInterface*>(GetTabInterface());
+ 
++  tab_styling()->UpdateContainerAccent(tab, *this);
+   if (tabs::ShouldUpdateAccessibleName(old_data, tab_data_)) {
+     UpdateAccessibleName();
+   }
+--- a/chrome/browser/ui/views/tabs/common/tab_view_horizontal_layout.cc
++++ b/chrome/browser/ui/views/tabs/common/tab_view_horizontal_layout.cc
+@@ -55,8 +55,11 @@
+ 
+ void TabViewHorizontalLayout::OnTabClosing() {
+   center_icon_override_ =
+-      CalculateChildVisibilities(TabView().width(),
+-                                 TabView().GetContentsBounds().width())
++      CalculateChildVisibilities(
++          TabView().width(),
++          TabView().GetContentsBounds().width() -
++              TabView().tab_styling()->GetContainerAccentInset(
++                  TabView().width()))
+           .center_icon;
+ }
+ 
+@@ -99,6 +102,8 @@
+   layouts.host_size = gfx::Size(width, height);
+   gfx::Rect contents_rect = gfx::Rect(layouts.host_size);
+   contents_rect.Inset(TabView().GetInsets());
++  contents_rect.Inset(gfx::Insets().set_left(
++      TabView().tab_styling()->GetContainerAccentInset(width)));
+ 
+   auto [showing_icon, showing_alert_indicator, showing_close_button, show_title,
+         center_icon, extra_alert_indicator_padding] =
+--- a/chrome/browser/ui/views/tabs/common/tab_view_vertical_layout.cc
++++ b/chrome/browser/ui/views/tabs/common/tab_view_vertical_layout.cc
+@@ -64,6 +64,9 @@
+   const bool is_centered = (TabView().pinned_ || TabView().collapsed_) &&
+                            !TabView().IsInExpandOnHover(width);
+ 
++  bounds_remaining.Inset(gfx::Insets().set_left(
++      TabView().tab_styling()->GetContainerAccentInset(width)));
++
+   int placed_children = 0;
+   for (const auto& child : tab_children_configs_) {
+     const bool can_render_child =
+--- a/chrome/browser/ui/views/tabs/common/vertical_tab_style_views.cc
++++ b/chrome/browser/ui/views/tabs/common/vertical_tab_style_views.cc
+@@ -29,7 +29,8 @@
+ 
+ VerticalTabStyleViews::VerticalTabStyleViews(
+     std::unique_ptr<TabStyleViewDelegate> delegate)
+-    : delegate_(std::move(delegate)) {
++    : TabStyleViews(TabStripOrientation::kVertical),
++      delegate_(std::move(delegate)) {
+   CHECK(delegate_);
+ }
+ 
+--- /dev/null
++++ b/chrome/browser/ui/views/tabs/container_tab_accent.cc
+@@ -0,0 +1,185 @@
++// Copyright (c) 2025-2026 The Brave Authors. All rights reserved.
++// Copyright 2026 The Helium Authors.
++// This Source Code Form is subject to the terms of the Mozilla Public
++// License, v. 2.0. If a copy of the MPL was not distributed with this file,
++// You can obtain one at https://mozilla.org/MPL/2.0/.
++
++#include "chrome/browser/ui/views/tabs/container_tab_accent.h"
++
++#include <cmath>
++#include <utility>
++
++#include "base/feature_list.h"
++#include "base/functional/bind.h"
++#include "base/strings/utf_string_conversions.h"
++#include "cc/paint/paint_flags.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/tabs/container_foreground_icon.h"
++#include "chrome/browser/ui/views/tabs/tab_style_views.h"
++#include "chrome/common/helium_temporary_container_pref.h"
++#include "chrome/common/pref_names.h"
++#include "chrome/grit/generated_resources.h"
++#include "components/tabs/public/tab_interface.h"
++#include "content/public/browser/security_principal.h"
++#include "content/public/browser/site_instance.h"
++#include "content/public/browser/web_contents.h"
++#include "content/public/common/helium_named_containers.h"
++#include "third_party/skia/include/core/SkPath.h"
++#include "third_party/skia/include/core/SkRRect.h"
++#include "ui/base/l10n/l10n_util.h"
++#include "ui/color/color_id.h"
++#include "ui/color/color_provider.h"
++#include "ui/gfx/canvas.h"
++#include "ui/gfx/color_utils.h"
++#include "ui/gfx/scoped_canvas.h"
++#include "ui/views/accessibility/view_accessibility.h"
++#include "ui/views/view.h"
++
++using helium::containers::Entry;
++using helium::containers::Icon;
++
++namespace {
++const std::string* ContainerIdForTab(const tabs::TabInterface* tab) {
++  auto* contents = tab ? tab->GetContents() : nullptr;
++  if (!contents) {
++    return nullptr;
++  }
++  const auto& config = contents->GetSiteInstance()
++                           ->GetSecurityPrincipal()
++                           .GetStoragePartitionConfig();
++  return config.partition_domain() == helium::containers::kPartitionDomain
++             ? &config.partition_name()
++             : nullptr;
++}
++}  // namespace
++
++void ContainerTabAccent::Update(std::unique_ptr<ContainerTabAccent>& accent,
++                                const tabs::TabInterface* tab,
++                                views::View& view) {
++  if (!base::FeatureList::IsEnabled(
++          helium::containers::kHeliumNamedContainers)) {
++    return;
++  }
++  const auto* id = ContainerIdForTab(tab);
++  if (id && helium::containers::IsAvailable(tab->GetProfile())) {
++    auto& profile = *tab->GetProfile();
++    if (!accent || accent->entry_.id != *id || &*accent->profile_ != &profile) {
++      accent.reset(new ContainerTabAccent(profile, view, *id));
++      view.InvalidateLayout();
++    }
++  } else if (accent) {
++    accent.reset();
++    view.GetViewAccessibility().RemoveDescription();
++    view.InvalidateLayout();
++    view.SchedulePaint();
++  }
++}
++
++ContainerTabAccent::ContainerTabAccent(Profile& profile,
++                                       views::View& view,
++                                       const std::string& id)
++    : profile_(profile), view_(view), entry_{id, {}, Icon::kPerson, 0} {
++  prefs_.Init(profile.GetPrefs());
++  auto changed = base::BindRepeating(&ContainerTabAccent::RefreshAppearance,
++                                     base::Unretained(this));
++  if (id.starts_with("t-")) {
++    prefs_.Add(prefs::kHeliumTemporaryContainers, changed);
++  } else {
++    prefs_.Add(prefs::kHeliumNamedContainers, changed);
++    prefs_.Add(helium::containers::kAppearancePref, changed);
++  }
++  RefreshAppearance();
++}
++
++ContainerTabAccent::~ContainerTabAccent() = default;
++
++void ContainerTabAccent::RefreshAppearance() {
++  // A deleted or unsynced container tab still belongs to its own partition.
++  auto entry = helium::containers::FindById(&*profile_, entry_.id)
++                   .value_or(Entry{entry_.id, {}, Icon::kPerson, 0x74787e});
++  if (entry.name == entry_.name && entry.color == entry_.color &&
++      entry.icon == entry_.icon) {
++    return;
++  }
++  entry_ = std::move(entry);
++  const auto description =
++      entry_.name.empty()
++          ? l10n_util::GetStringUTF16(IDS_HELIUM_TAB_UNKNOWN_CONTAINER)
++          : l10n_util::GetStringFUTF16(
++                entry_.id.starts_with("t-")
++                    ? IDS_HELIUM_TAB_TEMPORARY_CONTAINER_DESCRIPTION
++                    : IDS_HELIUM_TAB_CONTAINER_DESCRIPTION,
++                base::UTF8ToUTF16(entry_.name));
++  view_->GetViewAccessibility().SetDescription(description);
++  icon_ = {};
++  view_->SchedulePaint();
++}
++
++void ContainerTabAccent::Paint(gfx::Canvas* canvas,
++                               const TabStyleViews& style) {
++  const SkPath outline =
++      style.GetPath(TabStyle::PathType::kHighlight, canvas->image_scale(),
++                    {.render_units = TabStyle::RenderUnits::kDips});
++  const SkRect bounds = outline.getBounds();
++  if (bounds.isEmpty()) {
++    return;
++  }
++
++  const bool large = style.GetContainerAccentInset(view_->width()) > 0;
++  const SkColor accent = SkColorSetA(entry_.color, SK_AlphaOPAQUE);
++  const auto* delegate = style.delegate();
++  const bool active = delegate->IsActive();
++  const SkColor surface =
++      view_->GetColorProvider()->GetColor(ui::kColorWindowBackground);
++  const SkColor base =
++      color_utils::IsDark(surface) ? SK_ColorBLACK : SK_ColorWHITE;
++  const SkColor fill =
++      active ? accent
++             : color_utils::AlphaBlend(accent, base,
++                                       delegate->IsHovering() ? 0.4f : 0.22f);
++  const SkColor foreground =
++      color_utils::BlendForMinContrast(
++          active ? SK_ColorWHITE : accent, fill, std::nullopt,
++          color_utils::kMinimumVisibleContrastRatio)
++          .color;
++
++  gfx::ScopedCanvas scoped(canvas);
++  canvas->ClipPath(outline, true);
++  // Views mirrors child positions in RTL. Mirror only the accent geometry,
++  // leaving the actual tab outline and the icon artwork in physical
++  // coordinates.
++  const bool rtl = view_->GetMirroredXInView(0) != 0;
++  const int width = large ? kWidth : 14;
++  const int left =
++      rtl ? std::floor(bounds.right()) - width : std::ceil(bounds.left());
++  const int center_x = left + width / 2;
++  const int center_y = large ? std::round(bounds.centerY())
++                             : std::floor(bounds.bottom()) - width / 2 - 1;
++  cc::PaintFlags flags;
++  flags.setAntiAlias(true);
++  flags.setColor(fill);
++  if (large) {
++    // Subtract a rounded inner edge from the leading 22 DIP of the tab.
++    gfx::ScopedCanvas fill_canvas(canvas);
++    SkRect inner = bounds;
++    inner.offset(rtl ? -width : width, 0);
++    canvas->ClipPath(SkPath::RRect(SkRRect::MakeRectXY(inner, 7, 7)), true,
++                     SkClipOp::kDifference);
++    canvas->DrawPath(outline, flags);
++  } else {
++    canvas->DrawCircle(gfx::PointF(center_x, center_y), width / 2.f, flags);
++  }
++
++  flags.setStyle(cc::PaintFlags::kStroke_Style);
++  flags.setColor(fill);
++  flags.setStrokeWidth(2.f / canvas->image_scale());
++  canvas->DrawPath(outline, flags);
++
++  const int size = large ? 16 : 10;
++  if (icon_.isNull() || icon_.width() != size || icon_color_ != foreground) {
++    icon_ =
++        helium::containers::ContainerForegroundIcon(entry_, size, foreground);
++    icon_color_ = foreground;
++  }
++  canvas->DrawImageInt(icon_, center_x - size / 2, center_y - size / 2);
++}
+--- /dev/null
++++ b/chrome/browser/ui/views/tabs/container_tab_accent.h
+@@ -0,0 +1,53 @@
++// Copyright 2026 The Helium Authors
++// You can use, redistribute, and/or modify this source code under
++// the terms of the GPL-3.0 license that can be found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_VIEWS_TABS_CONTAINER_TAB_ACCENT_H_
++#define CHROME_BROWSER_UI_VIEWS_TABS_CONTAINER_TAB_ACCENT_H_
++
++#include <memory>
++
++#include "base/memory/raw_ref.h"
++#include "chrome/browser/containers/named_containers.h"
++#include "components/prefs/pref_change_registrar.h"
++#include "third_party/skia/include/core/SkColor.h"
++#include "ui/gfx/image/image_skia.h"
++
++class Profile;
++class TabStyleViews;
++namespace gfx {
++class Canvas;
++}
++namespace tabs {
++class TabInterface;
++}
++namespace views {
++class View;
++}
++
++class ContainerTabAccent {
++ public:
++  static constexpr int kWidth = 22;
++
++  // Only tabs in a container need a painter and preference observers.
++  static void Update(std::unique_ptr<ContainerTabAccent>& accent,
++                     const tabs::TabInterface* tab,
++                     views::View& view);
++  ~ContainerTabAccent();
++  void Paint(gfx::Canvas* canvas, const TabStyleViews& style);
++
++ private:
++  ContainerTabAccent(Profile& profile,
++                     views::View& view,
++                     const std::string& id);
++  void RefreshAppearance();
++
++  const raw_ref<Profile> profile_;
++  const raw_ref<views::View> view_;
++  helium::containers::Entry entry_;
++  PrefChangeRegistrar prefs_;
++  gfx::ImageSkia icon_;
++  SkColor icon_color_ = SK_ColorTRANSPARENT;
++};
++
++#endif  // CHROME_BROWSER_UI_VIEWS_TABS_CONTAINER_TAB_ACCENT_H_
+--- a/chrome/browser/ui/views/tabs/tab.cc
++++ b/chrome/browser/ui/views/tabs/tab.cc
+@@ -442,6 +442,7 @@
+   // TabInterface can be null during unit tests
+   tabs::TabInterface* const tab_interface = tab_handle_.Get();
+   if (tab_interface) {
++    tab_style_views_->UpdateContainerAccent(tab_interface, *this);
+     tab_data_observer_ = std::make_unique<tabs::TabDataObserver>(tab_interface);
+     // base::Unretained(this) is safe because the Tab owns the TabDataObserver
+     // so it is guaranteed to outlive the data observer.
+@@ -501,7 +502,8 @@
+   const bool was_showing_icon = showing_icon_;
+   UpdateIconVisibility();
+ 
+-  const int start = contents_rect.x();
++  const int start =
++      contents_rect.x() + tab_style_views_->GetContainerAccentInset(width());
+ 
+   // Position the underline under the tab contents.
+   constexpr int kGlicUnderlineYOffset = 8;
+@@ -930,6 +932,7 @@
+ 
+ void Tab::OnPaint(gfx::Canvas* canvas) {
+   tab_style_views()->PaintTab(canvas);
++  tab_style_views()->PaintContainerAccent(canvas);
+ }
+ 
+ void Tab::AddedToWidget() {
+@@ -1358,7 +1361,8 @@
+     return;
+   }
+ 
+-  int available_width = GetContentsBounds().width();
++  int available_width = GetContentsBounds().width() -
++                        tab_style_views_->GetContainerAccentInset(width());
+ 
+   const bool touch_ui = ui::TouchUiController::Get()->touch_ui();
+   const int favicon_width = gfx::kFaviconSize;
+@@ -1591,6 +1595,7 @@
+     return;
+   }
+ 
++  tab_style_views_->UpdateContainerAccent(tab_handle_.Get(), *this);
+   if (tab_data == data_) {
+     return;
+   }
+--- a/chrome/browser/ui/views/tabs/tab_style_views.cc
++++ b/chrome/browser/ui/views/tabs/tab_style_views.cc
+@@ -13,8 +13,10 @@
+ #include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "chrome/browser/ui/tabs/tab_style.h"
++#include "chrome/browser/ui/tabs/vertical_tab_strip_state.h"
+ #include "chrome/browser/ui/views/tabs/common/horizontal_tab_style_views.h"
+ #include "chrome/browser/ui/views/tabs/common/vertical_tab_style_views.h"
++#include "chrome/browser/ui/views/tabs/container_tab_accent.h"
+ #include "ui/gfx/color_utils.h"
+ 
+ // static
+@@ -71,6 +73,29 @@
+   return std::make_unique<HorizontalTabStyleViews>(std::move(delegate));
+ }
+ 
+-TabStyleViews::TabStyleViews() : tab_style_(TabStyle::Get()) {}
++TabStyleViews::TabStyleViews(TabStripOrientation orientation)
++    : tab_style_(TabStyle::Get()), orientation_(orientation) {}
+ 
+ TabStyleViews::~TabStyleViews() = default;
++
++void TabStyleViews::UpdateContainerAccent(const tabs::TabInterface* tab,
++                                          views::View& view) {
++  ContainerTabAccent::Update(container_accent_, tab, view);
++}
++
++int TabStyleViews::GetContainerAccentInset(int width) const {
++  if (!container_accent_ || delegate()->IsPinned()) {
++    return 0;
++  }
++  const int min_width =
++      orientation_ == TabStripOrientation::kVertical
++          ? tabs::kVerticalTabStripCollapsedWidth + ContainerTabAccent::kWidth
++          : tab_style()->GetStandardWidth(delegate()->IsSplit()) / 2;
++  return width >= min_width ? ContainerTabAccent::kWidth : 0;
++}
++
++void TabStyleViews::PaintContainerAccent(gfx::Canvas* canvas) const {
++  if (container_accent_) {
++    container_accent_->Paint(canvas, *this);
++  }
++}
+--- a/chrome/browser/ui/views/tabs/tab_style_views.h
++++ b/chrome/browser/ui/views/tabs/tab_style_views.h
+@@ -29,6 +29,11 @@
+   static ui::metadata::ValidStrings GetValidStrings();
+ };
+ 
++namespace tabs {
++class TabInterface;
++}
++
++class ContainerTabAccent;
+ class Tab;
+ class BrowserFrameView;
+ class BrowserWindowInterface;
+@@ -101,7 +106,7 @@
+       std::unique_ptr<TabStyleViewDelegate> delegate,
+       TabStripOrientation orientation);
+ 
+-  TabStyleViews();
++  explicit TabStyleViews(TabStripOrientation orientation);
+   virtual ~TabStyleViews();
+ 
+   // Gets the specific `path_type` associated with the specific `tab`.
+@@ -119,6 +124,10 @@
+ 
+   // Paints the tab.
+   virtual void PaintTab(gfx::Canvas* canvas) const = 0;
++
++  void UpdateContainerAccent(const tabs::TabInterface* tab, views::View& view);
++  int GetContainerAccentInset(int width) const;
++  void PaintContainerAccent(gfx::Canvas* canvas) const;
+ 
+   // Returns the insets to use for laying out tab contents.
+   virtual gfx::Insets GetContentsInsets() const = 0;
+@@ -152,6 +161,8 @@
+ 
+  private:
+   const raw_ptr<const TabStyle> tab_style_;
++  const TabStripOrientation orientation_;
++  std::unique_ptr<ContainerTabAccent> container_accent_;
+ };
+ 
+ #endif  // CHROME_BROWSER_UI_VIEWS_TABS_TAB_STYLE_VIEWS_H_
