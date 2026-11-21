@@ -1,6 +1,7 @@
 // Copyright (c) 2026 The Helium Authors
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Run with Node 22+ and the path to a desktop Helium executable.
+// Pass --temporary-containers to repeat the lifecycle checks with temporary sessions.
 // Pass --in-place-discard to exercise Chromium's alternate hibernation path.
 import assert from 'node:assert/strict';
 import {execFile, spawn} from 'node:child_process';
@@ -15,6 +16,7 @@ import {promisify} from 'node:util';
 
 if (!process.argv[2]) throw Error('Usage: node test_named_container_restore.mjs <Helium executable>');
 const binary = resolve(process.argv[2]);
+const temporary = process.argv.includes('--temporary-containers');
 const inPlaceDiscard = process.argv.includes('--in-place-discard');
 const root = await mkdtemp(join(tmpdir(), 'helium-restore-'));
 const profile = join(root, 'profile');
@@ -136,8 +138,11 @@ async function stop() {
   assert.equal(code, 0);
   child = null;
 }
-async function open(path, name) {
-  await promisify(execFile)(binary, [...common, ...(name ? ['--container=' + name] : []), origin + '/' + path],
+async function open(path, name, useTemporary = temporary && !!name) {
+  const switches = [];
+  if (useTemporary) switches.push('--temporary-container');
+  if (name) switches.push('--container=' + name);
+  await promisify(execFile)(binary, [...common, ...switches, origin + '/' + path],
                              {timeout: 30000, cwd: root});
 }
 async function who(path, account, since) {
@@ -186,6 +191,51 @@ try {
     const since = visits.length;
     await open('login/' + label, name);
     await who(label, accounts[label], since);
+  }
+  if (temporary) {
+    for (const [path, name, contained, expected] of [
+      ['reuse-work', 'Work', true, 'Alice'],
+      ['permanent-work', 'Work', false, 'signed out'],
+      ['fresh-temporary', null, true, 'signed out'],
+    ]) {
+      const since = visits.length;
+      await open(path, name, contained);
+      await who(path, expected, since);
+    }
+
+    // This temporary container is referenced only by Recently Closed.
+    accounts.closed = 'Dana';
+    let since = visits.length;
+    await open('login/closed', 'Closed only');
+    await who('closed', accounts.closed, since);
+    await closeTab('closed');
+    await stop();
+
+    // Model an abandoned partition from an interrupted session. The profile
+    // is disposable and the browser is shut down while creating this fixture.
+    const prefsPath = join(profile, 'Default', 'Preferences');
+    const prefs = JSON.parse(await readFile(prefsPath, 'utf8'));
+    const orphan = 't-' + randomUUID();
+    prefs.helium.containers.temporary[orphan] = {name: 'Orphan', color: 0x488cff};
+    await writeFile(prefsPath, JSON.stringify(prefs));
+    const leaf = createHash('sha256').update(orphan).digest('hex').slice(0, 12).toUpperCase();
+    const partition = join(profile, 'Default', 'Storage', 'ext', 'containers', leaf);
+    const marker = join(partition, 'marker');
+    await mkdir(partition, {recursive: true});
+    await writeFile(marker, 'Unused temporary partition');
+    since = visits.length;
+    await start(true, true);
+    await reopen(await closedId('closed'));
+    await who('closed', accounts.closed, since);
+    await until('unused temporary partition removed', async () => {
+      try { await readFile(marker); return false; }
+      catch (error) { if (error.code === 'ENOENT') return true; throw error; }
+    });
+    await until('unused temporary metadata removed', async () => {
+      const saved = JSON.parse(await readFile(prefsPath, 'utf8'));
+      return !Object.hasOwn(saved.helium.containers.temporary, orphan);
+    });
+    console.log('Temporary sessions: isolated from namesakes, fresh on demand, recently closed login restored, orphan removed.');
   }
   for (const label of ['work','personal']) {
     const id = await hibernate(label);

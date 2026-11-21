@@ -1,0 +1,2038 @@
+Port Brave v1.102.17's new-tab container picker and temporary sessions.
+Container glyphs are from @brave/nala 4.0.0 under MPL-2.0.
+Retain temporary partitions referenced by session restore or recently closed tabs.
+
+--- a/chrome/app/generated_resources.grd
++++ b/chrome/app/generated_resources.grd
+@@ -20650,6 +20650,21 @@
+     <message name="IDS_HELIUM_CONTAINER_TITLE" desc="Name of the container settings page.">
+       Containers
+     </message>
++    <message name="IDS_HELIUM_NEW_TAB_NO_CONTAINER" desc="Ordinary tab option on the new tab button.">
++      No Container
++    </message>
++    <message name="IDS_HELIUM_CONTAINER_NEW_TEMPORARY" desc="Create a fresh temporary browsing session.">
++      New Temporary Container
++    </message>
++    <message name="IDS_HELIUM_NEW_TAB_MANAGE_CONTAINERS" desc="Open container settings from the new tab button.">
++      Manage Containers
++    </message>
++    <message name="IDS_HELIUM_CONTAINER_SOCIAL" desc="Social container icon option.">
++      Social
++    </message>
++    <message name="IDS_HELIUM_CONTAINER_SCHOOL" desc="School container icon option.">
++      School
++    </message>
+     <message name="IDS_HELIUM_CONTAINER_OPEN" desc="Tab context submenu that opens a copy in a different browsing session.">
+       Open in container
+     </message>
+--- a/chrome/app/vector_icons/BUILD.gn
++++ b/chrome/app/vector_icons/BUILD.gn
+@@ -13,6 +13,10 @@
+     # go/keep-sorted start
+     "account_add_chrome_refresh_old.icon",
+     "account_box.icon",
++    "leo_container_personal.icon",
++    "leo_container_work.icon",
++    "leo_container_social.icon",
++    "leo_container_school.icon",
+     "account_box_old.icon",
+     "account_child_circle_old.icon",
+     "account_child_filled.icon",
+--- /dev/null
++++ b/chrome/app/vector_icons/leo_container_personal.icon
+@@ -0,0 +1,25 @@
++// Copyright (c) 2026 The Brave Authors. All rights reserved.
++// This Source Code Form is subject to the terms of the Mozilla Public
++// License, v. 2.0. If a copy of the MPL was not distributed with this file,
++// You can obtain one at https://mozilla.org/MPL/2.0/.
++
++CANVAS_DIMENSIONS, 16,
++MOVE_TO, 8.54f, 2.23f,
++R_ARC_TO, 0.75f, 0.75f, 0, 0, 0, -1.08f, 0,
++R_LINE_TO, -5.25f, 5.5f,
++ARC_TO, 0.75f, 0.75f, 0, 0, 0, 2.75f, 9,
++H_LINE_TO, 4,
++R_V_LINE_TO, 4,
++R_ARC_TO, 1, 1, 0, 0, 0, 1, 1,
++R_H_LINE_TO, 1,
++R_ARC_TO, 1, 1, 0, 0, 0, 1, -1,
++R_V_LINE_TO, -1,
++R_ARC_TO, 1, 1, 0, 1, 1, 2, 0,
++R_V_LINE_TO, 1,
++R_ARC_TO, 1, 1, 0, 0, 0, 1, 1,
++R_H_LINE_TO, 1,
++R_ARC_TO, 1, 1, 0, 0, 0, 1, -1,
++V_LINE_TO, 9,
++R_H_LINE_TO, 1.25f,
++R_ARC_TO, 0.75f, 0.75f, 0, 0, 0, 0.54f, -1.27f,
++CLOSE
+--- /dev/null
++++ b/chrome/app/vector_icons/leo_container_school.icon
+@@ -0,0 +1,44 @@
++// Copyright (c) 2026 The Brave Authors. All rights reserved.
++// This Source Code Form is subject to the terms of the Mozilla Public
++// License, v. 2.0. If a copy of the MPL was not distributed with this file,
++// You can obtain one at https://mozilla.org/MPL/2.0/.
++
++CANVAS_DIMENSIONS, 16,
++MOVE_TO, 7.7f, 1.37f,
++R_ARC_TO, 0.75f, 0.75f, 0, 0, 1, 0.6f, 0,
++R_CUBIC_TO, 2.1f, 0.91f, 4.11f, 1.99f, 6, 3.22f,
++R_ARC_TO, 0.75f, 0.75f, 0, 0, 1, -0.19f, 1.35f,
++ARC_TO, 34.3f, 34.3f, 0, 0, 0, 8.34f, 8.25f,
++R_ARC_TO, 0.75f, 0.75f, 0, 0, 1, -0.68f, 0,
++R_QUADRATIC_TO, -0.94f, -0.48f, -1.91f, -0.9f,
++R_V_LINE_TO, -0.54f,
++R_ARC_TO, 37, 37, 0, 0, 1, 2.57f, -1.33f,
++R_ARC_TO, 0.75f, 0.75f, 0, 0, 0, -0.64f, -1.36f,
++R_ARC_TO, 38, 38, 0, 0, 0, -3.06f, 1.61f,
++R_ARC_TO, 0.75f, 0.75f, 0, 0, 0, -0.37f, 0.65f,
++R_V_LINE_TO, 0.37f,
++R_QUADRATIC_TO, -1.16f, -0.44f, -2.36f, -0.8f,
++R_ARC_TO, 0.75f, 0.75f, 0, 0, 1, -0.19f, -1.35f,
++R_ARC_TO, 41, 41, 0, 0, 1, 6.01f, -3.22f,
++MOVE_TO, 4.25f, 8.35f,
++R_QUADRATIC_TO, -0.79f, -0.32f, -1.61f, -0.6f,
++R_ARC_TO, 41, 41, 0, 0, 0, -0.42f, 2.97f,
++R_ARC_TO, 0.75f, 0.75f, 0, 0, 0, 0.47f, 0.78f,
++R_QUADRATIC_TO, 0.26f, 0.1f, 0.52f, 0.21f,
++R_ARC_TO, 5.5f, 5.5f, 0, 0, 1, -0.58f, 0.68f,
++R_ARC_TO, 0.75f, 0.75f, 0, 1, 0, 1.06f, 1.06f,
++R_QUADRATIC_TO, 0.53f, -0.52f, 0.92f, -1.12f,
++R_ARC_TO, 29, 29, 0, 0, 0, -1.39f, -0.62f,
++ARC_TO, 5.5f, 5.5f, 0, 0, 0, 4.25f, 8.5f,
++CLOSE,
++MOVE_TO, 7.6f, 13.96f,
++R_QUADRATIC_TO, -1.44f, -0.9f, -2.99f, -1.63f,
++R_ARC_TO, 7, 7, 0, 0, 0, 1.12f, -3.34f,
++R_QUADRATIC_TO, 0.63f, 0.29f, 1.24f, 0.6f,
++R_ARC_TO, 2.25f, 2.25f, 0, 0, 0, 2.05f, 0,
++R_ARC_TO, 33, 33, 0, 0, 1, 4.34f, -1.83f,
++R_QUADRATIC_TO, 0.26f, 1.47f, 0.42f, 2.97f,
++R_ARC_TO, 0.75f, 0.75f, 0, 0, 1, -0.47f, 0.78f,
++R_ARC_TO, 29.4f, 29.4f, 0, 0, 0, -4.91f, 2.46f,
++R_ARC_TO, 0.75f, 0.75f, 0, 0, 1, -0.79f, 0,
++CLOSE
+--- /dev/null
++++ b/chrome/app/vector_icons/leo_container_social.icon
+@@ -0,0 +1,26 @@
++// Copyright (c) 2026 The Brave Authors. All rights reserved.
++// This Source Code Form is subject to the terms of the Mozilla Public
++// License, v. 2.0. If a copy of the MPL was not distributed with this file,
++// You can obtain one at https://mozilla.org/MPL/2.0/.
++
++CANVAS_DIMENSIONS, 16,
++MOVE_TO, 15, 8,
++ARC_TO, 7, 7, 0, 1, 1, 1, 8,
++R_ARC_TO, 7, 7, 0, 0, 1, 14, 0,
++MOVE_TO, 6, 8,
++R_CUBIC_TO, 0.55f, 0, 1, -0.67f, 1, -1.5f,
++CUBIC_TO_SHORTHAND, 6.55f, 5, 6, 5,
++R_CUBIC_TO, -0.55f, 0, -1, 0.67f, -1, 1.5f,
++CUBIC_TO_SHORTHAND, 5.45f, 8, 6, 8,
++R_MOVE_TO, 5, -1.5f,
++R_CUBIC_TO, 0, 0.83f, -0.45f, 1.5f, -1, 1.5f,
++R_CUBIC_TO, -0.55f, 0, -1, -0.67f, -1, -1.5f,
++CUBIC_TO_SHORTHAND, 9.45f, 5, 10, 5,
++R_CUBIC_TO, 0.55f, 0, 1, 0.67f, 1, 1.5f,
++R_MOVE_TO, 0.01f, 4.25f,
++R_ARC_TO, 0.75f, 0.75f, 0, 0, 0, -1.06f, 0,
++R_ARC_TO, 2.75f, 2.75f, 0, 0, 1, -3.89f, 0,
++R_ARC_TO, 0.75f, 0.75f, 0, 0, 0, -1.06f, 1.06f,
++R_ARC_TO, 4.25f, 4.25f, 0, 0, 0, 6.01f, 0,
++R_ARC_TO, 0.75f, 0.75f, 0, 0, 0, 0, -1.06f,
++CLOSE
+--- /dev/null
++++ b/chrome/app/vector_icons/leo_container_work.icon
+@@ -0,0 +1,42 @@
++// Copyright (c) 2026 The Brave Authors. All rights reserved.
++// This Source Code Form is subject to the terms of the Mozilla Public
++// License, v. 2.0. If a copy of the MPL was not distributed with this file,
++// You can obtain one at https://mozilla.org/MPL/2.0/.
++
++CANVAS_DIMENSIONS, 16,
++MOVE_TO, 11, 4.5f,
++R_V_LINE_TO, -1,
++R_ARC_TO, 2, 2, 0, 0, 0, -2, -2,
++H_LINE_TO, 7,
++R_ARC_TO, 2, 2, 0, 0, 0, -2, 2,
++R_V_LINE_TO, 1,
++H_LINE_TO, 4,
++R_ARC_TO, 2, 2, 0, 0, 0, -2, 2,
++R_V_LINE_TO, 3,
++R_ARC_TO, 2, 2, 0, 0, 0, 2, 2,
++R_H_LINE_TO, 8,
++R_ARC_TO, 2, 2, 0, 0, 0, 2, -2,
++R_V_LINE_TO, -3,
++R_ARC_TO, 2, 2, 0, 0, 0, -2, -2,
++CLOSE,
++MOVE_TO, 9, 3,
++H_LINE_TO, 7,
++R_ARC_TO, 0.5f, 0.5f, 0, 0, 0, -0.5f, 0.5f,
++R_V_LINE_TO, 1,
++R_H_LINE_TO, 3,
++R_V_LINE_TO, -1,
++ARC_TO, 0.5f, 0.5f, 0, 0, 0, 9, 3,
++R_MOVE_TO, 0, 6.5f,
++R_ARC_TO, 1, 1, 0, 1, 1, -2, 0,
++R_ARC_TO, 1, 1, 0, 0, 1, 2, 0,
++CLOSE,
++MOVE_TO, 3, 12.33f,
++R_V_LINE_TO, 0.17f,
++R_ARC_TO, 2, 2, 0, 0, 0, 2, 2,
++R_H_LINE_TO, 6,
++R_ARC_TO, 2, 2, 0, 0, 0, 2, -2,
++R_V_LINE_TO, -0.17f,
++R_CUBIC_TO, -0.31f, 0.11f, -0.65f, 0.17f, -1, 0.17f,
++H_LINE_TO, 4,
++R_CUBIC_TO, -0.35f, 0, -0.69f, -0.06f, -1, -0.17f,
++CLOSE
+--- a/chrome/browser/chrome_browser_main.cc
++++ b/chrome/browser/chrome_browser_main.cc
+@@ -3,6 +3,11 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/chrome_browser_main.h"
++
++#include "chrome/common/buildflags.h"
++#if BUILDFLAG(ENABLE_SESSION_SERVICE)
++#include "chrome/browser/sessions/temporary_container_cleanup.h"
++#endif
+ 
+ #include <memory>
+ #include <string>
+@@ -1613,6 +1618,9 @@
+   for (auto& chrome_extra_part : chrome_extra_parts_) {
+     chrome_extra_part->PostProfileInit(profile, is_initial_profile);
+   }
++#if BUILDFLAG(ENABLE_SESSION_SERVICE)
++  helium::containers::ScheduleTemporaryContainerCleanup(profile);
++#endif
+ 
+ #if BUILDFLAG(IS_WIN)
+   // Verify that the profile is not on a network share and if so prepare to show
+--- a/chrome/browser/containers/BUILD.gn
++++ b/chrome/browser/containers/BUILD.gn
+@@ -6,6 +6,7 @@
+   sources = [
+     "named_containers.cc",
+     "named_containers.h",
++    "temporary_container_words.h",
+   ]
+   public_deps = [
+     "//base",
+--- a/chrome/browser/containers/named_containers.cc
++++ b/chrome/browser/containers/named_containers.cc
+@@ -6,18 +6,24 @@
+ #include "chrome/browser/containers/named_containers.h"
+ 
+ #include <algorithm>
++#include <array>
+ #include <optional>
+ #include <utility>
+ 
+ #include "base/barrier_callback.h"
++#include "base/containers/span.h"
+ #include "base/functional/bind.h"
+ #include "base/functional/callback_helpers.h"
++#include "base/rand_util.h"
++#include "base/strings/strcat.h"
+ #include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/time/time.h"
+ #include "base/uuid.h"
+ #include "base/values.h"
++#include "chrome/browser/containers/temporary_container_words.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "chrome/common/helium_temporary_container_pref.h"
+ #include "chrome/common/pref_names.h"
+ #include "components/prefs/pref_service.h"
+ #include "components/prefs/scoped_user_pref_update.h"
+@@ -31,6 +37,19 @@
+ namespace helium::containers {
+ namespace {
+ 
++struct DefaultStyle {
++  std::string_view id;
++  Icon icon;
++  int color;
++};
++// Brave's original order and badge colors. Preferences override these defaults.
++constexpr auto kDefaults = std::to_array<DefaultStyle>({
++    {"0053d88e-7b26-4bfa-9175-783e1bfcba97", Icon::kHome, 0x488cff},
++    {"2c2777a1-80b3-4b26-b629-ae1aefd9f272", Icon::kWork, 0xff3c36},
++    {"cfc3ee90-a163-4bd0-99ff-f0a472dda804", Icon::kSocial, 0x9973f8},
++    {"f5d49086-1a5f-42b0-83fa-58682e5b8ba5", Icon::kSchool, 0x2fab5f},
++});
++
+ bool ValidStyle(int icon, int color) {
+   return icon >= 0 && icon <= static_cast<int>(Icon::kMaxValue) && color >= 0 &&
+          color <= 0xffffff;
+@@ -69,15 +88,10 @@
+       continue;
+     }
+     Entry entry{*id, item.first, Icon::kPerson, 0x3971ce};
+-    if (*id == "2c2777a1-80b3-4b26-b629-ae1aefd9f272") {
+-      entry.icon = Icon::kWork;
+-      entry.color = 0xcb4859;
+-    } else if (*id == "cfc3ee90-a163-4bd0-99ff-f0a472dda804") {
+-      entry.icon = Icon::kGroup;
+-      entry.color = 0x8157bd;
+-    } else if (*id == "f5d49086-1a5f-42b0-83fa-58682e5b8ba5") {
+-      entry.icon = Icon::kStar;
+-      entry.color = 0x288050;
++    if (auto it = std::ranges::find(kDefaults, *id, &DefaultStyle::id);
++        it != kDefaults.end()) {
++      entry.icon = it->icon;
++      entry.color = it->color;
+     }
+     if (const auto* style = appearance.FindDict(*id)) {
+       int icon = style->FindInt("icon").value_or(-1);
+@@ -89,11 +103,72 @@
+     }
+     entries.push_back(std::move(entry));
+   }
++  std::ranges::stable_sort(entries, {}, [](const Entry& entry) {
++    return std::ranges::find(kDefaults, entry.id, &DefaultStyle::id) -
++           kDefaults.begin();
++  });
+   return entries;
+ }
+ 
++std::optional<Entry> FindTemporary(Profile* profile, const std::string& id) {
++  if (!IsAvailable(profile) || !id.starts_with("t-") ||
++      !base::Uuid::ParseLowercase(std::string_view(id).substr(2)).is_valid()) {
++    return std::nullopt;
++  }
++  const auto* data = profile->GetPrefs()
++                         ->GetDict(prefs::kHeliumTemporaryContainers)
++                         .FindDict(id);
++  if (!data || data->FindBool("deleting").value_or(false)) {
++    return std::nullopt;
++  }
++  const auto* name = data->FindString("name");
++  const auto color = data->FindInt("color");
++  if (!name || !color || !ValidStyle(0, *color)) {
++    return std::nullopt;
++  }
++  return Entry{id, *name, Icon::kPerson, *color};
++}
++
++content::StoragePartitionConfig GetTemporaryPartition(Profile* profile,
++                                                      const std::string& name) {
++  CHECK(IsAvailable(profile));
++  auto* prefs_service = profile->GetPrefs();
++  if (!name.empty()) {
++    for (const auto item :
++         prefs_service->GetDict(prefs::kHeliumTemporaryContainers)) {
++      auto entry = FindTemporary(profile, item.first);
++      if (entry && entry->name == name) {
++        return content::StoragePartitionConfig::Create(
++            profile, kPartitionDomain, entry->id, false);
++      }
++    }
++  }
++
++  const auto id =
++      base::StrCat({"t-", base::Uuid::GenerateRandomV4().AsLowercaseString()});
++  // The first two BIP-39 words depend only on the first 22 random bits.
++  // Sampling the indices directly avoids a wallet/cryptography dependency.
++  std::string label = name;
++  if (label.empty()) {
++    label = base::StrCat(
++        {base::RandomChoice(base::span(kTemporaryContainerWords)), " ",
++         base::RandomChoice(base::span(kTemporaryContainerWords))});
++    label[0] = base::ToUpperASCII(label[0]);
++  }
++  static constexpr auto kColors =
++      std::to_array<int>({0xff3c36, 0xf45202, 0xb08c00, 0x2fab5f, 0x35a0b4,
++                          0x488cff, 0x9973f8, 0xff1593});
++  ScopedDictPrefUpdate update(prefs_service, prefs::kHeliumTemporaryContainers);
++  update->Set(id, base::DictValue()
++                      .Set("name", label)
++                      .Set("color", base::RandomChoice(kColors)));
++  return content::StoragePartitionConfig::Create(profile, kPartitionDomain, id,
++                                                 false);
++}
++
+ bool HasId(Profile* profile, const std::string& id) {
+-  return IsAvailable(profile) && NameForId(profile, id).has_value();
++  return IsAvailable(profile) &&
++         (NameForId(profile, id) || FindTemporary(profile, id));
+ }
+ 
+ content::StoragePartitionConfig GetOrCreateNamedPartition(
+--- a/chrome/browser/containers/named_containers.h
++++ b/chrome/browser/containers/named_containers.h
+@@ -6,6 +6,7 @@
+ #ifndef CHROME_BROWSER_CONTAINERS_NAMED_CONTAINERS_H_
+ #define CHROME_BROWSER_CONTAINERS_NAMED_CONTAINERS_H_
+ 
++#include <optional>
+ #include <string>
+ #include <vector>
+ 
+@@ -26,7 +27,9 @@
+   kStar,
+   kHome,
+   kTravel,
+-  kMaxValue = kTravel
++  kSocial,
++  kSchool,
++  kMaxValue = kSchool
+ };
+ struct Entry {
+   std::string id;
+@@ -37,6 +40,12 @@
+ 
+ bool IsAvailable(Profile* profile);
+ std::vector<Entry> List(Profile* profile);
++std::optional<Entry> FindTemporary(Profile* profile, const std::string& id);
++// An empty name always creates a new temporary container. An explicit name
++// reuses its local temporary session, independently of named containers.
++content::StoragePartitionConfig GetTemporaryPartition(
++    Profile* profile,
++    const std::string& name = {});
+ bool HasId(Profile* profile, const std::string& id);
+ content::StoragePartitionConfig GetOrCreateNamedPartition(
+     Profile* profile,
+--- /dev/null
++++ b/chrome/browser/containers/temporary_container_words.h
+@@ -0,0 +1,373 @@
++// English BIP-39 vocabulary from Brave's bat-native-bip39wally-core,
++// revision 547a7810333d821e29b8f55126aba031aa0d5fcd.
++// Copyright Jon Griffiths (Blockstream) 2016.
++//
++// Permission is hereby granted, free of charge, to any person obtaining a copy
++// of this software and associated documentation files (the "Software"), to deal
++// in the Software without restriction, including without limitation the rights
++// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++// copies of the Software, and to permit persons to whom the Software is
++// furnished to do so, subject to the following conditions:
++//
++// The above copyright notice and this permission notice shall be included in
++// all copies or substantial portions of the Software.
++//
++// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
++// THE SOFTWARE.
++#ifndef CHROME_BROWSER_CONTAINERS_TEMPORARY_CONTAINER_WORDS_H_
++#define CHROME_BROWSER_CONTAINERS_TEMPORARY_CONTAINER_WORDS_H_
++
++namespace helium::containers {
++// Fixed-width words avoid a table of 2048 pointer relocations.
++inline constexpr char kTemporaryContainerWords[][9] = {
++    "abandon",  "ability",  "able",     "about",    "above",    "absent",
++    "absorb",   "abstract", "absurd",   "abuse",    "access",   "accident",
++    "account",  "accuse",   "achieve",  "acid",     "acoustic", "acquire",
++    "across",   "act",      "action",   "actor",    "actress",  "actual",
++    "adapt",    "add",      "addict",   "address",  "adjust",   "admit",
++    "adult",    "advance",  "advice",   "aerobic",  "affair",   "afford",
++    "afraid",   "again",    "age",      "agent",    "agree",    "ahead",
++    "aim",      "air",      "airport",  "aisle",    "alarm",    "album",
++    "alcohol",  "alert",    "alien",    "all",      "alley",    "allow",
++    "almost",   "alone",    "alpha",    "already",  "also",     "alter",
++    "always",   "amateur",  "amazing",  "among",    "amount",   "amused",
++    "analyst",  "anchor",   "ancient",  "anger",    "angle",    "angry",
++    "animal",   "ankle",    "announce", "annual",   "another",  "answer",
++    "antenna",  "antique",  "anxiety",  "any",      "apart",    "apology",
++    "appear",   "apple",    "approve",  "april",    "arch",     "arctic",
++    "area",     "arena",    "argue",    "arm",      "armed",    "armor",
++    "army",     "around",   "arrange",  "arrest",   "arrive",   "arrow",
++    "art",      "artefact", "artist",   "artwork",  "ask",      "aspect",
++    "assault",  "asset",    "assist",   "assume",   "asthma",   "athlete",
++    "atom",     "attack",   "attend",   "attitude", "attract",  "auction",
++    "audit",    "august",   "aunt",     "author",   "auto",     "autumn",
++    "average",  "avocado",  "avoid",    "awake",    "aware",    "away",
++    "awesome",  "awful",    "awkward",  "axis",     "baby",     "bachelor",
++    "bacon",    "badge",    "bag",      "balance",  "balcony",  "ball",
++    "bamboo",   "banana",   "banner",   "bar",      "barely",   "bargain",
++    "barrel",   "base",     "basic",    "basket",   "battle",   "beach",
++    "bean",     "beauty",   "because",  "become",   "beef",     "before",
++    "begin",    "behave",   "behind",   "believe",  "below",    "belt",
++    "bench",    "benefit",  "best",     "betray",   "better",   "between",
++    "beyond",   "bicycle",  "bid",      "bike",     "bind",     "biology",
++    "bird",     "birth",    "bitter",   "black",    "blade",    "blame",
++    "blanket",  "blast",    "bleak",    "bless",    "blind",    "blood",
++    "blossom",  "blouse",   "blue",     "blur",     "blush",    "board",
++    "boat",     "body",     "boil",     "bomb",     "bone",     "bonus",
++    "book",     "boost",    "border",   "boring",   "borrow",   "boss",
++    "bottom",   "bounce",   "box",      "boy",      "bracket",  "brain",
++    "brand",    "brass",    "brave",    "bread",    "breeze",   "brick",
++    "bridge",   "brief",    "bright",   "bring",    "brisk",    "broccoli",
++    "broken",   "bronze",   "broom",    "brother",  "brown",    "brush",
++    "bubble",   "buddy",    "budget",   "buffalo",  "build",    "bulb",
++    "bulk",     "bullet",   "bundle",   "bunker",   "burden",   "burger",
++    "burst",    "bus",      "business", "busy",     "butter",   "buyer",
++    "buzz",     "cabbage",  "cabin",    "cable",    "cactus",   "cage",
++    "cake",     "call",     "calm",     "camera",   "camp",     "can",
++    "canal",    "cancel",   "candy",    "cannon",   "canoe",    "canvas",
++    "canyon",   "capable",  "capital",  "captain",  "car",      "carbon",
++    "card",     "cargo",    "carpet",   "carry",    "cart",     "case",
++    "cash",     "casino",   "castle",   "casual",   "cat",      "catalog",
++    "catch",    "category", "cattle",   "caught",   "cause",    "caution",
++    "cave",     "ceiling",  "celery",   "cement",   "census",   "century",
++    "cereal",   "certain",  "chair",    "chalk",    "champion", "change",
++    "chaos",    "chapter",  "charge",   "chase",    "chat",     "cheap",
++    "check",    "cheese",   "chef",     "cherry",   "chest",    "chicken",
++    "chief",    "child",    "chimney",  "choice",   "choose",   "chronic",
++    "chuckle",  "chunk",    "churn",    "cigar",    "cinnamon", "circle",
++    "citizen",  "city",     "civil",    "claim",    "clap",     "clarify",
++    "claw",     "clay",     "clean",    "clerk",    "clever",   "click",
++    "client",   "cliff",    "climb",    "clinic",   "clip",     "clock",
++    "clog",     "close",    "cloth",    "cloud",    "clown",    "club",
++    "clump",    "cluster",  "clutch",   "coach",    "coast",    "coconut",
++    "code",     "coffee",   "coil",     "coin",     "collect",  "color",
++    "column",   "combine",  "come",     "comfort",  "comic",    "common",
++    "company",  "concert",  "conduct",  "confirm",  "congress", "connect",
++    "consider", "control",  "convince", "cook",     "cool",     "copper",
++    "copy",     "coral",    "core",     "corn",     "correct",  "cost",
++    "cotton",   "couch",    "country",  "couple",   "course",   "cousin",
++    "cover",    "coyote",   "crack",    "cradle",   "craft",    "cram",
++    "crane",    "crash",    "crater",   "crawl",    "crazy",    "cream",
++    "credit",   "creek",    "crew",     "cricket",  "crime",    "crisp",
++    "critic",   "crop",     "cross",    "crouch",   "crowd",    "crucial",
++    "cruel",    "cruise",   "crumble",  "crunch",   "crush",    "cry",
++    "crystal",  "cube",     "culture",  "cup",      "cupboard", "curious",
++    "current",  "curtain",  "curve",    "cushion",  "custom",   "cute",
++    "cycle",    "dad",      "damage",   "damp",     "dance",    "danger",
++    "daring",   "dash",     "daughter", "dawn",     "day",      "deal",
++    "debate",   "debris",   "decade",   "december", "decide",   "decline",
++    "decorate", "decrease", "deer",     "defense",  "define",   "defy",
++    "degree",   "delay",    "deliver",  "demand",   "demise",   "denial",
++    "dentist",  "deny",     "depart",   "depend",   "deposit",  "depth",
++    "deputy",   "derive",   "describe", "desert",   "design",   "desk",
++    "despair",  "destroy",  "detail",   "detect",   "develop",  "device",
++    "devote",   "diagram",  "dial",     "diamond",  "diary",    "dice",
++    "diesel",   "diet",     "differ",   "digital",  "dignity",  "dilemma",
++    "dinner",   "dinosaur", "direct",   "dirt",     "disagree", "discover",
++    "disease",  "dish",     "dismiss",  "disorder", "display",  "distance",
++    "divert",   "divide",   "divorce",  "dizzy",    "doctor",   "document",
++    "dog",      "doll",     "dolphin",  "domain",   "donate",   "donkey",
++    "donor",    "door",     "dose",     "double",   "dove",     "draft",
++    "dragon",   "drama",    "drastic",  "draw",     "dream",    "dress",
++    "drift",    "drill",    "drink",    "drip",     "drive",    "drop",
++    "drum",     "dry",      "duck",     "dumb",     "dune",     "during",
++    "dust",     "dutch",    "duty",     "dwarf",    "dynamic",  "eager",
++    "eagle",    "early",    "earn",     "earth",    "easily",   "east",
++    "easy",     "echo",     "ecology",  "economy",  "edge",     "edit",
++    "educate",  "effort",   "egg",      "eight",    "either",   "elbow",
++    "elder",    "electric", "elegant",  "element",  "elephant", "elevator",
++    "elite",    "else",     "embark",   "embody",   "embrace",  "emerge",
++    "emotion",  "employ",   "empower",  "empty",    "enable",   "enact",
++    "end",      "endless",  "endorse",  "enemy",    "energy",   "enforce",
++    "engage",   "engine",   "enhance",  "enjoy",    "enlist",   "enough",
++    "enrich",   "enroll",   "ensure",   "enter",    "entire",   "entry",
++    "envelope", "episode",  "equal",    "equip",    "era",      "erase",
++    "erode",    "erosion",  "error",    "erupt",    "escape",   "essay",
++    "essence",  "estate",   "eternal",  "ethics",   "evidence", "evil",
++    "evoke",    "evolve",   "exact",    "example",  "excess",   "exchange",
++    "excite",   "exclude",  "excuse",   "execute",  "exercise", "exhaust",
++    "exhibit",  "exile",    "exist",    "exit",     "exotic",   "expand",
++    "expect",   "expire",   "explain",  "expose",   "express",  "extend",
++    "extra",    "eye",      "eyebrow",  "fabric",   "face",     "faculty",
++    "fade",     "faint",    "faith",    "fall",     "false",    "fame",
++    "family",   "famous",   "fan",      "fancy",    "fantasy",  "farm",
++    "fashion",  "fat",      "fatal",    "father",   "fatigue",  "fault",
++    "favorite", "feature",  "february", "federal",  "fee",      "feed",
++    "feel",     "female",   "fence",    "festival", "fetch",    "fever",
++    "few",      "fiber",    "fiction",  "field",    "figure",   "file",
++    "film",     "filter",   "final",    "find",     "fine",     "finger",
++    "finish",   "fire",     "firm",     "first",    "fiscal",   "fish",
++    "fit",      "fitness",  "fix",      "flag",     "flame",    "flash",
++    "flat",     "flavor",   "flee",     "flight",   "flip",     "float",
++    "flock",    "floor",    "flower",   "fluid",    "flush",    "fly",
++    "foam",     "focus",    "fog",      "foil",     "fold",     "follow",
++    "food",     "foot",     "force",    "forest",   "forget",   "fork",
++    "fortune",  "forum",    "forward",  "fossil",   "foster",   "found",
++    "fox",      "fragile",  "frame",    "frequent", "fresh",    "friend",
++    "fringe",   "frog",     "front",    "frost",    "frown",    "frozen",
++    "fruit",    "fuel",     "fun",      "funny",    "furnace",  "fury",
++    "future",   "gadget",   "gain",     "galaxy",   "gallery",  "game",
++    "gap",      "garage",   "garbage",  "garden",   "garlic",   "garment",
++    "gas",      "gasp",     "gate",     "gather",   "gauge",    "gaze",
++    "general",  "genius",   "genre",    "gentle",   "genuine",  "gesture",
++    "ghost",    "giant",    "gift",     "giggle",   "ginger",   "giraffe",
++    "girl",     "give",     "glad",     "glance",   "glare",    "glass",
++    "glide",    "glimpse",  "globe",    "gloom",    "glory",    "glove",
++    "glow",     "glue",     "goat",     "goddess",  "gold",     "good",
++    "goose",    "gorilla",  "gospel",   "gossip",   "govern",   "gown",
++    "grab",     "grace",    "grain",    "grant",    "grape",    "grass",
++    "gravity",  "great",    "green",    "grid",     "grief",    "grit",
++    "grocery",  "group",    "grow",     "grunt",    "guard",    "guess",
++    "guide",    "guilt",    "guitar",   "gun",      "gym",      "habit",
++    "hair",     "half",     "hammer",   "hamster",  "hand",     "happy",
++    "harbor",   "hard",     "harsh",    "harvest",  "hat",      "have",
++    "hawk",     "hazard",   "head",     "health",   "heart",    "heavy",
++    "hedgehog", "height",   "hello",    "helmet",   "help",     "hen",
++    "hero",     "hidden",   "high",     "hill",     "hint",     "hip",
++    "hire",     "history",  "hobby",    "hockey",   "hold",     "hole",
++    "holiday",  "hollow",   "home",     "honey",    "hood",     "hope",
++    "horn",     "horror",   "horse",    "hospital", "host",     "hotel",
++    "hour",     "hover",    "hub",      "huge",     "human",    "humble",
++    "humor",    "hundred",  "hungry",   "hunt",     "hurdle",   "hurry",
++    "hurt",     "husband",  "hybrid",   "ice",      "icon",     "idea",
++    "identify", "idle",     "ignore",   "ill",      "illegal",  "illness",
++    "image",    "imitate",  "immense",  "immune",   "impact",   "impose",
++    "improve",  "impulse",  "inch",     "include",  "income",   "increase",
++    "index",    "indicate", "indoor",   "industry", "infant",   "inflict",
++    "inform",   "inhale",   "inherit",  "initial",  "inject",   "injury",
++    "inmate",   "inner",    "innocent", "input",    "inquiry",  "insane",
++    "insect",   "inside",   "inspire",  "install",  "intact",   "interest",
++    "into",     "invest",   "invite",   "involve",  "iron",     "island",
++    "isolate",  "issue",    "item",     "ivory",    "jacket",   "jaguar",
++    "jar",      "jazz",     "jealous",  "jeans",    "jelly",    "jewel",
++    "job",      "join",     "joke",     "journey",  "joy",      "judge",
++    "juice",    "jump",     "jungle",   "junior",   "junk",     "just",
++    "kangaroo", "keen",     "keep",     "ketchup",  "key",      "kick",
++    "kid",      "kidney",   "kind",     "kingdom",  "kiss",     "kit",
++    "kitchen",  "kite",     "kitten",   "kiwi",     "knee",     "knife",
++    "knock",    "know",     "lab",      "label",    "labor",    "ladder",
++    "lady",     "lake",     "lamp",     "language", "laptop",   "large",
++    "later",    "latin",    "laugh",    "laundry",  "lava",     "law",
++    "lawn",     "lawsuit",  "layer",    "lazy",     "leader",   "leaf",
++    "learn",    "leave",    "lecture",  "left",     "leg",      "legal",
++    "legend",   "leisure",  "lemon",    "lend",     "length",   "lens",
++    "leopard",  "lesson",   "letter",   "level",    "liar",     "liberty",
++    "library",  "license",  "life",     "lift",     "light",    "like",
++    "limb",     "limit",    "link",     "lion",     "liquid",   "list",
++    "little",   "live",     "lizard",   "load",     "loan",     "lobster",
++    "local",    "lock",     "logic",    "lonely",   "long",     "loop",
++    "lottery",  "loud",     "lounge",   "love",     "loyal",    "lucky",
++    "luggage",  "lumber",   "lunar",    "lunch",    "luxury",   "lyrics",
++    "machine",  "mad",      "magic",    "magnet",   "maid",     "mail",
++    "main",     "major",    "make",     "mammal",   "man",      "manage",
++    "mandate",  "mango",    "mansion",  "manual",   "maple",    "marble",
++    "march",    "margin",   "marine",   "market",   "marriage", "mask",
++    "mass",     "master",   "match",    "material", "math",     "matrix",
++    "matter",   "maximum",  "maze",     "meadow",   "mean",     "measure",
++    "meat",     "mechanic", "medal",    "media",    "melody",   "melt",
++    "member",   "memory",   "mention",  "menu",     "mercy",    "merge",
++    "merit",    "merry",    "mesh",     "message",  "metal",    "method",
++    "middle",   "midnight", "milk",     "million",  "mimic",    "mind",
++    "minimum",  "minor",    "minute",   "miracle",  "mirror",   "misery",
++    "miss",     "mistake",  "mix",      "mixed",    "mixture",  "mobile",
++    "model",    "modify",   "mom",      "moment",   "monitor",  "monkey",
++    "monster",  "month",    "moon",     "moral",    "more",     "morning",
++    "mosquito", "mother",   "motion",   "motor",    "mountain", "mouse",
++    "move",     "movie",    "much",     "muffin",   "mule",     "multiply",
++    "muscle",   "museum",   "mushroom", "music",    "must",     "mutual",
++    "myself",   "mystery",  "myth",     "naive",    "name",     "napkin",
++    "narrow",   "nasty",    "nation",   "nature",   "near",     "neck",
++    "need",     "negative", "neglect",  "neither",  "nephew",   "nerve",
++    "nest",     "net",      "network",  "neutral",  "never",    "news",
++    "next",     "nice",     "night",    "noble",    "noise",    "nominee",
++    "noodle",   "normal",   "north",    "nose",     "notable",  "note",
++    "nothing",  "notice",   "novel",    "now",      "nuclear",  "number",
++    "nurse",    "nut",      "oak",      "obey",     "object",   "oblige",
++    "obscure",  "observe",  "obtain",   "obvious",  "occur",    "ocean",
++    "october",  "odor",     "off",      "offer",    "office",   "often",
++    "oil",      "okay",     "old",      "olive",    "olympic",  "omit",
++    "once",     "one",      "onion",    "online",   "only",     "open",
++    "opera",    "opinion",  "oppose",   "option",   "orange",   "orbit",
++    "orchard",  "order",    "ordinary", "organ",    "orient",   "original",
++    "orphan",   "ostrich",  "other",    "outdoor",  "outer",    "output",
++    "outside",  "oval",     "oven",     "over",     "own",      "owner",
++    "oxygen",   "oyster",   "ozone",    "pact",     "paddle",   "page",
++    "pair",     "palace",   "palm",     "panda",    "panel",    "panic",
++    "panther",  "paper",    "parade",   "parent",   "park",     "parrot",
++    "party",    "pass",     "patch",    "path",     "patient",  "patrol",
++    "pattern",  "pause",    "pave",     "payment",  "peace",    "peanut",
++    "pear",     "peasant",  "pelican",  "pen",      "penalty",  "pencil",
++    "people",   "pepper",   "perfect",  "permit",   "person",   "pet",
++    "phone",    "photo",    "phrase",   "physical", "piano",    "picnic",
++    "picture",  "piece",    "pig",      "pigeon",   "pill",     "pilot",
++    "pink",     "pioneer",  "pipe",     "pistol",   "pitch",    "pizza",
++    "place",    "planet",   "plastic",  "plate",    "play",     "please",
++    "pledge",   "pluck",    "plug",     "plunge",   "poem",     "poet",
++    "point",    "polar",    "pole",     "police",   "pond",     "pony",
++    "pool",     "popular",  "portion",  "position", "possible", "post",
++    "potato",   "pottery",  "poverty",  "powder",   "power",    "practice",
++    "praise",   "predict",  "prefer",   "prepare",  "present",  "pretty",
++    "prevent",  "price",    "pride",    "primary",  "print",    "priority",
++    "prison",   "private",  "prize",    "problem",  "process",  "produce",
++    "profit",   "program",  "project",  "promote",  "proof",    "property",
++    "prosper",  "protect",  "proud",    "provide",  "public",   "pudding",
++    "pull",     "pulp",     "pulse",    "pumpkin",  "punch",    "pupil",
++    "puppy",    "purchase", "purity",   "purpose",  "purse",    "push",
++    "put",      "puzzle",   "pyramid",  "quality",  "quantum",  "quarter",
++    "question", "quick",    "quit",     "quiz",     "quote",    "rabbit",
++    "raccoon",  "race",     "rack",     "radar",    "radio",    "rail",
++    "rain",     "raise",    "rally",    "ramp",     "ranch",    "random",
++    "range",    "rapid",    "rare",     "rate",     "rather",   "raven",
++    "raw",      "razor",    "ready",    "real",     "reason",   "rebel",
++    "rebuild",  "recall",   "receive",  "recipe",   "record",   "recycle",
++    "reduce",   "reflect",  "reform",   "refuse",   "region",   "regret",
++    "regular",  "reject",   "relax",    "release",  "relief",   "rely",
++    "remain",   "remember", "remind",   "remove",   "render",   "renew",
++    "rent",     "reopen",   "repair",   "repeat",   "replace",  "report",
++    "require",  "rescue",   "resemble", "resist",   "resource", "response",
++    "result",   "retire",   "retreat",  "return",   "reunion",  "reveal",
++    "review",   "reward",   "rhythm",   "rib",      "ribbon",   "rice",
++    "rich",     "ride",     "ridge",    "rifle",    "right",    "rigid",
++    "ring",     "riot",     "ripple",   "risk",     "ritual",   "rival",
++    "river",    "road",     "roast",    "robot",    "robust",   "rocket",
++    "romance",  "roof",     "rookie",   "room",     "rose",     "rotate",
++    "rough",    "round",    "route",    "royal",    "rubber",   "rude",
++    "rug",      "rule",     "run",      "runway",   "rural",    "sad",
++    "saddle",   "sadness",  "safe",     "sail",     "salad",    "salmon",
++    "salon",    "salt",     "salute",   "same",     "sample",   "sand",
++    "satisfy",  "satoshi",  "sauce",    "sausage",  "save",     "say",
++    "scale",    "scan",     "scare",    "scatter",  "scene",    "scheme",
++    "school",   "science",  "scissors", "scorpion", "scout",    "scrap",
++    "screen",   "script",   "scrub",    "sea",      "search",   "season",
++    "seat",     "second",   "secret",   "section",  "security", "seed",
++    "seek",     "segment",  "select",   "sell",     "seminar",  "senior",
++    "sense",    "sentence", "series",   "service",  "session",  "settle",
++    "setup",    "seven",    "shadow",   "shaft",    "shallow",  "share",
++    "shed",     "shell",    "sheriff",  "shield",   "shift",    "shine",
++    "ship",     "shiver",   "shock",    "shoe",     "shoot",    "shop",
++    "short",    "shoulder", "shove",    "shrimp",   "shrug",    "shuffle",
++    "shy",      "sibling",  "sick",     "side",     "siege",    "sight",
++    "sign",     "silent",   "silk",     "silly",    "silver",   "similar",
++    "simple",   "since",    "sing",     "siren",    "sister",   "situate",
++    "six",      "size",     "skate",    "sketch",   "ski",      "skill",
++    "skin",     "skirt",    "skull",    "slab",     "slam",     "sleep",
++    "slender",  "slice",    "slide",    "slight",   "slim",     "slogan",
++    "slot",     "slow",     "slush",    "small",    "smart",    "smile",
++    "smoke",    "smooth",   "snack",    "snake",    "snap",     "sniff",
++    "snow",     "soap",     "soccer",   "social",   "sock",     "soda",
++    "soft",     "solar",    "soldier",  "solid",    "solution", "solve",
++    "someone",  "song",     "soon",     "sorry",    "sort",     "soul",
++    "sound",    "soup",     "source",   "south",    "space",    "spare",
++    "spatial",  "spawn",    "speak",    "special",  "speed",    "spell",
++    "spend",    "sphere",   "spice",    "spider",   "spike",    "spin",
++    "spirit",   "split",    "spoil",    "sponsor",  "spoon",    "sport",
++    "spot",     "spray",    "spread",   "spring",   "spy",      "square",
++    "squeeze",  "squirrel", "stable",   "stadium",  "staff",    "stage",
++    "stairs",   "stamp",    "stand",    "start",    "state",    "stay",
++    "steak",    "steel",    "stem",     "step",     "stereo",   "stick",
++    "still",    "sting",    "stock",    "stomach",  "stone",    "stool",
++    "story",    "stove",    "strategy", "street",   "strike",   "strong",
++    "struggle", "student",  "stuff",    "stumble",  "style",    "subject",
++    "submit",   "subway",   "success",  "such",     "sudden",   "suffer",
++    "sugar",    "suggest",  "suit",     "summer",   "sun",      "sunny",
++    "sunset",   "super",    "supply",   "supreme",  "sure",     "surface",
++    "surge",    "surprise", "surround", "survey",   "suspect",  "sustain",
++    "swallow",  "swamp",    "swap",     "swarm",    "swear",    "sweet",
++    "swift",    "swim",     "swing",    "switch",   "sword",    "symbol",
++    "symptom",  "syrup",    "system",   "table",    "tackle",   "tag",
++    "tail",     "talent",   "talk",     "tank",     "tape",     "target",
++    "task",     "taste",    "tattoo",   "taxi",     "teach",    "team",
++    "tell",     "ten",      "tenant",   "tennis",   "tent",     "term",
++    "test",     "text",     "thank",    "that",     "theme",    "then",
++    "theory",   "there",    "they",     "thing",    "this",     "thought",
++    "three",    "thrive",   "throw",    "thumb",    "thunder",  "ticket",
++    "tide",     "tiger",    "tilt",     "timber",   "time",     "tiny",
++    "tip",      "tired",    "tissue",   "title",    "toast",    "tobacco",
++    "today",    "toddler",  "toe",      "together", "toilet",   "token",
++    "tomato",   "tomorrow", "tone",     "tongue",   "tonight",  "tool",
++    "tooth",    "top",      "topic",    "topple",   "torch",    "tornado",
++    "tortoise", "toss",     "total",    "tourist",  "toward",   "tower",
++    "town",     "toy",      "track",    "trade",    "traffic",  "tragic",
++    "train",    "transfer", "trap",     "trash",    "travel",   "tray",
++    "treat",    "tree",     "trend",    "trial",    "tribe",    "trick",
++    "trigger",  "trim",     "trip",     "trophy",   "trouble",  "truck",
++    "true",     "truly",    "trumpet",  "trust",    "truth",    "try",
++    "tube",     "tuition",  "tumble",   "tuna",     "tunnel",   "turkey",
++    "turn",     "turtle",   "twelve",   "twenty",   "twice",    "twin",
++    "twist",    "two",      "type",     "typical",  "ugly",     "umbrella",
++    "unable",   "unaware",  "uncle",    "uncover",  "under",    "undo",
++    "unfair",   "unfold",   "unhappy",  "uniform",  "unique",   "unit",
++    "universe", "unknown",  "unlock",   "until",    "unusual",  "unveil",
++    "update",   "upgrade",  "uphold",   "upon",     "upper",    "upset",
++    "urban",    "urge",     "usage",    "use",      "used",     "useful",
++    "useless",  "usual",    "utility",  "vacant",   "vacuum",   "vague",
++    "valid",    "valley",   "valve",    "van",      "vanish",   "vapor",
++    "various",  "vast",     "vault",    "vehicle",  "velvet",   "vendor",
++    "venture",  "venue",    "verb",     "verify",   "version",  "very",
++    "vessel",   "veteran",  "viable",   "vibrant",  "vicious",  "victory",
++    "video",    "view",     "village",  "vintage",  "violin",   "virtual",
++    "virus",    "visa",     "visit",    "visual",   "vital",    "vivid",
++    "vocal",    "voice",    "void",     "volcano",  "volume",   "vote",
++    "voyage",   "wage",     "wagon",    "wait",     "walk",     "wall",
++    "walnut",   "want",     "warfare",  "warm",     "warrior",  "wash",
++    "wasp",     "waste",    "water",    "wave",     "way",      "wealth",
++    "weapon",   "wear",     "weasel",   "weather",  "web",      "wedding",
++    "weekend",  "weird",    "welcome",  "west",     "wet",      "whale",
++    "what",     "wheat",    "wheel",    "when",     "where",    "whip",
++    "whisper",  "wide",     "width",    "wife",     "wild",     "will",
++    "win",      "window",   "wine",     "wing",     "wink",     "winner",
++    "winter",   "wire",     "wisdom",   "wise",     "wish",     "witness",
++    "wolf",     "woman",    "wonder",   "wood",     "wool",     "word",
++    "work",     "world",    "worry",    "worth",    "wrap",     "wreck",
++    "wrestle",  "wrist",    "write",    "wrong",    "yard",     "year",
++    "yellow",   "you",      "young",    "youth",    "zebra",    "zero",
++    "zone",     "zoo",
++};
++}  // namespace helium::containers
++
++#endif  // CHROME_BROWSER_CONTAINERS_TEMPORARY_CONTAINER_WORDS_H_
+--- a/chrome/browser/helium_flag_entries.h
++++ b/chrome/browser/helium_flag_entries.h
+@@ -75,8 +75,9 @@
+      "prevent access to networks that require a proxy. Helium flag.",
+      kOsAll, SINGLE_VALUE_TYPE(switches::kNoProxyServer)},
+     {"helium-named-containers", "Named containers",
+-     "Launch with --container=NAME and an optional web URL to use a separate "
+-     "login. Tabs opened with the same name share cookies and site data.",
++     "Right-click the new tab button to open a named or temporary container. "
++     "Tabs in the same container share logins and site data. Also supports "
++     "--container=NAME and --temporary-container.",
+      kOsDesktop,
+      FEATURE_VALUE_TYPE(helium::containers::kHeliumNamedContainers)},
+     // ui
+@@ -89,5 +90,5 @@
+      "bookmark star, page zoom, PWA install/open, local file access, and more. "
+      "Important actions and indicators will be missing. Helium flag.",
+      kOsDesktop, FEATURE_VALUE_TYPE(features::kHeliumHidePageActions)},
+-    // platform
++// platform
+ #endif  // CHROME_BROWSER_HELIUM_FLAG_ENTRIES_H_
+--- a/chrome/browser/prefs/browser_prefs.cc
++++ b/chrome/browser/prefs/browser_prefs.cc
+@@ -110,6 +110,7 @@
+ #include "chrome/browser/updates/announcement_notification/announcement_notification_service.h"
+ #include "chrome/browser/webauthn/webauthn_pref_names.h"
+ #include "chrome/common/buildflags.h"
++#include "chrome/common/helium_temporary_container_pref.h"
+ #include "chrome/common/pref_names.h"
+ #include "chrome/common/secure_origin_allowlist.h"
+ #include "components/autofill/core/common/autofill_prefs.h"
+@@ -2053,6 +2054,7 @@
+   TRACE_EVENT0("browser", "chrome::RegisterProfilePrefs");
+   // Preserve the IDs of Brave's four built-in containers. User-created names
+   // receive a UUID on first use in this profile.
++  registry->RegisterDictionaryPref(prefs::kHeliumTemporaryContainers);
+   base::DictValue named_containers;
+   named_containers.Set("Personal", "0053d88e-7b26-4bfa-9175-783e1bfcba97");
+   named_containers.Set("Work", "2c2777a1-80b3-4b26-b629-ae1aefd9f272");
+--- a/chrome/browser/resources/settings/appearance_page/containers_page.ts
++++ b/chrome/browser/resources/settings/appearance_page/containers_page.ts
+@@ -32,9 +32,10 @@
+ 
+ // The numeric indices are persisted by the browser.
+ export const ICONS = [
+-  ['cr:person-filled', 'containerPerson'], ['cr:domain', 'containerWork'],
++  ['cr:person-filled', 'containerPerson'], ['container16:work', 'containerWork'],
+   ['cr:group-filled', 'containerGroup'], ['cr:star-filled', 'containerStar'],
+-  ['settings20:home', 'containerHome'], ['cr:location-on-filled', 'containerTravel'],
++  ['container16:personal', 'containerHome'], ['cr:location-on-filled', 'containerTravel'],
++  ['container16:social', 'containerSocial'], ['container16:school', 'containerSchool'],
+ ] as const;
+ 
+ export function colorHex(color: number): string {
+--- a/chrome/browser/resources/settings/icons.html.ts
++++ b/chrome/browser/resources/settings/icons.html.ts
+@@ -6,6 +6,16 @@
+ 
+ import {loadTimeData} from './i18n_setup.js';
+ import {getTrustedHTML} from '//resources/js/static_types.js';
++
++// Container glyphs from Brave Nala 4.0.0, MPL-2.0.
++const containerIcons = document.createElement('div');
++containerIcons.innerHTML = getTrustedHTML`<cr-iconset name="container16" size="16"><svg><defs>
++    <g id="personal"><path fill="currentColor" d="M8.543 2.232a.75.75 0 0 0-1.085 0l-5.25 5.5A.75.75 0 0 0 2.75 9H4v4a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1a1 1 0 1 1 2 0v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1V9h1.25a.75.75 0 0 0 .543-1.268z"/></g>
++    <g id="work"><path fill="currentColor" fill-rule="evenodd" d="M11 4.5v-1a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v1H4a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2zM9 3H7a.5.5 0 0 0-.5.5v1h3v-1A.5.5 0 0 0 9 3m0 6.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0" clip-rule="evenodd"/><path fill="currentColor" d="M3 12.33v.17a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-.17c-.313.11-.65.17-1 .17H4c-.35 0-.687-.06-1-.17"/></g>
++    <g id="social"><path fill="currentColor" fill-rule="evenodd" d="M15 8A7 7 0 1 1 1 8a7 7 0 0 1 14 0M6 8c.552 0 1-.672 1-1.5S6.552 5 6 5s-1 .672-1 1.5S5.448 8 6 8m5-1.5c0 .828-.448 1.5-1 1.5s-1-.672-1-1.5S9.448 5 10 5s1 .672 1 1.5m.005 4.245a.75.75 0 0 0-1.06 0 2.75 2.75 0 0 1-3.89 0 .75.75 0 0 0-1.06 1.06 4.25 4.25 0 0 0 6.01 0 .75.75 0 0 0 0-1.06" clip-rule="evenodd"/></g>
++    <g id="school"><path fill="currentColor" d="M7.702 1.368a.75.75 0 0 1 .597 0c2.098.91 4.105 1.99 6.004 3.223a.75.75 0 0 1-.194 1.348A34.3 34.3 0 0 0 8.341 8.25a.75.75 0 0 1-.682 0q-.938-.48-1.909-.901v-.542a37 37 0 0 1 2.568-1.33.75.75 0 0 0-.636-1.357 38 38 0 0 0-3.06 1.605.75.75 0 0 0-.372.648v.365q-1.16-.44-2.359-.8a.75.75 0 0 1-.194-1.347 41 41 0 0 1 6.005-3.223M4.25 8.348q-.795-.318-1.611-.596a41 41 0 0 0-.418 2.97.75.75 0 0 0 .474.776q.263.102.524.21a5.5 5.5 0 0 1-.58.681.75.75 0 1 0 1.06 1.06q.525-.525.915-1.124a29 29 0 0 0-1.395-.617A5.5 5.5 0 0 0 4.25 8.5z"/><path fill="currentColor" d="M7.603 13.96q-1.441-.902-2.989-1.635a7 7 0 0 0 1.12-3.341q.629.288 1.244.602a2.25 2.25 0 0 0 2.045 0 33 33 0 0 1 4.338-1.834q.263 1.468.419 2.97a.75.75 0 0 1-.474.776 29.4 29.4 0 0 0-4.909 2.461.75.75 0 0 1-.794 0"/></g>
++</defs></svg></cr-iconset>`;
++document.head.appendChild(containerIcons);
+ 
+ const div = document.createElement('div');
+ if (loadTimeData.getBoolean('webuiRoundedIconsEnabled')) {
+--- a/chrome/browser/sessions/BUILD.gn
++++ b/chrome/browser/sessions/BUILD.gn
+@@ -50,6 +50,7 @@
+       "session_service_log.h",
+       "session_service_lookup.h",
+       "session_service_utils.h",
++      "temporary_container_cleanup.h",
+     ]
+     public_deps += [
+       "//chrome/browser/ui/browser_window",
+@@ -135,10 +136,20 @@
+       "session_service_log.cc",
+       "session_service_lookup.cc",
+       "session_service_utils.cc",
++      "temporary_container_cleanup.cc",
+     ]
+ 
+     deps += [
+       "//chrome/browser:after_startup_task_utils",
++      "//chrome/browser/containers",
++      "//chrome/browser:browser_process",
++      "//chrome/browser/net",
++      "//chrome/browser/ui/tab_contents",
++      "//components/tabs:public",
++      "//chrome/common:constants",
++      "//components/prefs",
++      "//content/public/common",
++      "//crypto",
+       "//chrome/browser/content_settings:content_settings_factory",
+       "//chrome/browser/devtools",
+       "//chrome/browser/extensions",
+--- /dev/null
++++ b/chrome/browser/sessions/temporary_container_cleanup.cc
+@@ -0,0 +1,239 @@
++// Copyright (c) 2026 The Brave Authors. All rights reserved.
++// This Source Code Form is subject to the terms of the Mozilla Public
++// License, v. 2.0. If a copy of the MPL was not distributed with this file,
++// You can obtain one at https://mozilla.org/MPL/2.0/.
++
++#include "chrome/browser/sessions/temporary_container_cleanup.h"
++
++#include <set>
++#include <string>
++#include <vector>
++
++#include "base/files/file_util.h"
++#include "base/functional/bind.h"
++#include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
++#include "base/scoped_observation.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/supports_user_data.h"
++#include "base/task/thread_pool.h"
++#include "base/uuid.h"
++#include "chrome/browser/browser_process.h"
++#include "chrome/browser/containers/named_containers.h"
++#include "chrome/browser/net/disk_cache_dir_util.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/sessions/session_service.h"
++#include "chrome/browser/sessions/session_service_factory.h"
++#include "chrome/browser/sessions/tab_restore_service_factory.h"
++#include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
++#include "chrome/common/chrome_constants.h"
++#include "chrome/common/chrome_paths_internal.h"
++#include "chrome/common/helium_temporary_container_pref.h"
++#include "chrome/common/pref_names.h"
++#include "components/prefs/pref_service.h"
++#include "components/prefs/scoped_user_pref_update.h"
++#include "components/sessions/content/content_serialized_navigation_builder.h"
++#include "components/sessions/core/session_types.h"
++#include "components/sessions/core/tab_restore_service.h"
++#include "components/sessions/core/tab_restore_service_observer.h"
++#include "components/sessions/core/tab_restore_types.h"
++#include "components/tabs/public/tab_interface.h"
++#include "content/public/browser/navigation_controller.h"
++#include "content/public/browser/web_contents.h"
++#include "content/public/common/helium_named_containers.h"
++#include "crypto/hash.h"
++
++namespace helium::containers {
++namespace {
++
++class StartupCleanup : public base::SupportsUserData::Data,
++                       public sessions::TabRestoreServiceObserver {
++ public:
++  static constexpr char kKey = 0;
++  explicit StartupCleanup(Profile* profile) : profile_(profile) {}
++  void Start(SessionService* session, sessions::TabRestoreService* restore) {
++    for (const auto item :
++         profile_->GetPrefs()->GetDict(prefs::kHeliumTemporaryContainers)) {
++      if (item.first.starts_with("t-") &&
++          base::Uuid::ParseLowercase(std::string_view(item.first).substr(2))
++              .is_valid()) {
++        candidates_.insert(item.first);
++      }
++    }
++    observation_.Observe(restore);
++    session->GetLastSession(
++        base::BindOnce(&StartupCleanup::OnLastSession, weak_.GetWeakPtr()));
++    if (!restore->IsLoaded()) {
++      restore->LoadTabsFromLastSession();
++    }
++  }
++
++ private:
++  void Protect(const std::vector<sessions::SerializedNavigationEntry>& navs) {
++    for (const auto& nav : navs) {
++      candidates_.erase(nav.named_container_id());
++      candidates_.erase(
++          sessions::SerializedNavigationEntry::ContainerIdFromStorageURL(
++              nav.virtual_url()));
++    }
++  }
++  void OnLastSession(
++      std::vector<std::unique_ptr<sessions::SessionWindow>> windows,
++      SessionID,
++      sessions::CommandStorageReadStatus status,
++      sessions::SessionReplayResult replay) {
++    if (sessions::IsCommandStorageReadError(status) ||
++        replay == sessions::SessionReplayResult::kCorruptedCommand) {
++      observation_.Reset();
++      return;  // An incomplete read is not evidence that a partition is unused.
++    }
++    for (const auto& window : windows) {
++      for (const auto& tab : window->tabs) {
++        Protect(tab->navigations);
++      }
++    }
++    got_session_ = true;
++    MaybeClean();
++  }
++  void TabRestoreServiceDestroyed(sessions::TabRestoreService*) override {
++    observation_.Reset();
++  }
++  void TabRestoreServiceLoaded(sessions::TabRestoreService*) override {
++    MaybeClean();
++  }
++
++  template <class T>
++  void ProtectTabs(const sessions::tab_restore::Entry& entry) {
++    for (const auto& tab : static_cast<const T&>(entry).tabs) {
++      Protect(tab->navigations);
++    }
++  }
++  void MaybeClean() {
++    auto* restore = observation_.GetSource();
++    if (!got_session_ || !restore || !restore->IsLoaded()) {
++      return;
++    }
++    namespace tr = sessions::tab_restore;
++    for (const auto& entry : restore->entries()) {
++      switch (entry->type) {
++        case tr::TAB:
++          Protect(static_cast<const tr::Tab&>(*entry).navigations);
++          break;
++        case tr::WINDOW:
++          ProtectTabs<tr::Window>(*entry);
++          break;
++        case tr::GROUP:
++          ProtectTabs<tr::Group>(*entry);
++          break;
++        case tr::SPLIT:
++          ProtectTabs<tr::Split>(*entry);
++          break;
++      }
++    }
++    observation_.Reset();
++    for (const auto& pinned :
++         profile_->GetPrefs()->GetList(prefs::kPinnedTabs)) {
++      const auto* dict = pinned.GetIfDict();
++      if (const auto* id = dict ? dict->FindString("container_id") : nullptr) {
++        candidates_.erase(*id);
++      }
++    }
++    // A tab may have moved out of the restore list while the saved session was
++    // loading. An unloaded tab can still carry a serialized partition ID.
++    tabs::ForEachTabInterface([&](tabs::TabInterface* tab) {
++      auto* contents = tab->GetContents();
++      if (contents && contents->GetBrowserContext() == profile_) {
++        if (auto* entry = contents->GetController().GetLastCommittedEntry()) {
++          using Builder = sessions::ContentSerializedNavigationBuilder;
++          candidates_.erase(Builder::FromNavigationEntry(
++                                0, entry, Builder::EXCLUDE_PAGE_STATE)
++                                .named_container_id());
++        }
++      }
++      return true;
++    });
++    for (const auto& id : candidates_) {
++      auto config = content::StoragePartitionConfig::Create(
++          profile_, kPartitionDomain, id, false);
++      if (profile_->GetStoragePartition(config, /*can_create=*/false)) {
++        continue;
++      }
++      // Block concurrent CLI reuse while the old directory is being removed.
++      // If interrupted, the tombstone is retried on the next startup.
++      {
++        ScopedDictPrefUpdate update(profile_->GetPrefs(),
++                                    prefs::kHeliumTemporaryContainers);
++        auto* metadata = update->FindDict(id);
++        if (!metadata) {
++          continue;
++        }
++        metadata->Set("deleting", true);
++      }
++      // Chromium StoragePartitionImplMap hashes the partition name into a
++      // six-byte hex leaf. Only validated, locally stored temporary UUIDs
++      // reach this point.
++      const auto hash = crypto::hash::Sha256(id);
++      const auto path =
++          profile_->GetPath()
++              .AppendASCII("Storage")
++              .AppendASCII("ext")
++              .AppendASCII(kPartitionDomain)
++              .AppendASCII(base::HexEncode(base::span(hash).first<6>()));
++      // Use the same cache location as ProfileNetworkContextService, including
++      // managed disk-cache overrides. Only touch this partition's Cache leaf.
++      base::FilePath cache;
++      chrome::GetUserCacheDirectory(path, &cache);
++      const auto override_dir =
++          chrome_browser_net::GetDiskCacheDir(g_browser_process->local_state());
++      if (!override_dir.empty()) {
++        cache = override_dir.Append(cache.BaseName());
++      }
++      base::ThreadPool::PostTaskAndReplyWithResult(
++          FROM_HERE, {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
++          base::BindOnce(
++              [](const base::FilePath& partition, const base::FilePath& cache) {
++                return base::DeletePathRecursively(
++                           cache.Append(chrome::kCacheDirname)) &&
++                       base::DeletePathRecursively(partition);
++              },
++              path, cache),
++          base::BindOnce(&StartupCleanup::OnDeleted, weak_.GetWeakPtr(), id));
++    }
++    candidates_.clear();
++  }
++  void OnDeleted(std::string id, bool success) {
++    if (success) {
++      ScopedDictPrefUpdate update(profile_->GetPrefs(),
++                                  prefs::kHeliumTemporaryContainers);
++      update->Remove(id);
++    }
++  }
++  raw_ptr<Profile> profile_;
++  std::set<std::string> candidates_;
++  bool got_session_ = false;
++  base::ScopedObservation<sessions::TabRestoreService,
++                          sessions::TabRestoreServiceObserver>
++      observation_{this};
++  base::WeakPtrFactory<StartupCleanup> weak_{this};
++};
++
++}  // namespace
++
++void ScheduleTemporaryContainerCleanup(Profile* profile) {
++  if (!IsAvailable(profile) ||
++      profile->GetPrefs()->GetDict(prefs::kHeliumTemporaryContainers).empty() ||
++      profile->GetUserData(&StartupCleanup::kKey)) {
++    return;
++  }
++  auto* session = SessionServiceFactory::GetForProfile(profile);
++  auto* restore = TabRestoreServiceFactory::GetForProfile(profile);
++  if (!session || !restore) {
++    return;
++  }
++  auto cleanup = std::make_unique<StartupCleanup>(profile);
++  auto* job = cleanup.get();
++  profile->SetUserData(&StartupCleanup::kKey, std::move(cleanup));
++  job->Start(session, restore);
++}
++
++}  // namespace helium::containers
+--- /dev/null
++++ b/chrome/browser/sessions/temporary_container_cleanup.h
+@@ -0,0 +1,15 @@
++// Copyright (c) 2026 The Brave Authors. All rights reserved.
++// This Source Code Form is subject to the terms of the Mozilla Public
++// License, v. 2.0. If a copy of the MPL was not distributed with this file,
++// You can obtain one at https://mozilla.org/MPL/2.0/.
++
++#ifndef CHROME_BROWSER_SESSIONS_TEMPORARY_CONTAINER_CLEANUP_H_
++#define CHROME_BROWSER_SESSIONS_TEMPORARY_CONTAINER_CLEANUP_H_
++
++class Profile;
++
++namespace helium::containers {
++void ScheduleTemporaryContainerCleanup(Profile* profile);
++}
++
++#endif  // CHROME_BROWSER_SESSIONS_TEMPORARY_CONTAINER_CLEANUP_H_
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -498,6 +498,7 @@
+     sources = [ "browser_tabrestore.cc" ]
+     public_deps = [ ":browser_tabrestore" ]
+     deps = [
++      "//chrome/browser/containers",
+       ":browser_window_header",
+       ":tab_ui_helper",
+       "//base",
+--- a/chrome/browser/ui/browser_tabrestore.cc
++++ b/chrome/browser/ui/browser_tabrestore.cc
+@@ -11,6 +11,7 @@
+ #include "base/containers/span.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/apps/app_service/web_contents_app_id_utils.h"
++#include "chrome/browser/containers/named_containers.h"
+ #include "chrome/browser/contextual_tasks/contextual_tasks_tab_restore_data.h"
+ #include "chrome/browser/glic/glic_tab_restore_helper.h"
+ #include "chrome/browser/profiles/profile.h"
+@@ -84,6 +85,13 @@
+       static_cast<size_t>(selected_navigation) < navigations.size()) {
+     const auto& selected = navigations[selected_navigation];
+     container_id = selected.named_container_id();
++    if (container_id.starts_with("t-") &&
++        !helium::containers::FindTemporary(browser->GetProfile(),
++                                           container_id)) {
++      // The storage either expired or is being deleted. The navigation builder
++      // seals a marked entry when it cannot attach its original partition.
++      container_id.clear();
++    }
+     if (!container_id.empty()) {
+       const auto partition = content::StoragePartitionConfig::Create(
+           browser->GetProfile(), helium::containers::kPartitionDomain,
+--- a/chrome/browser/ui/startup/startup_tab_provider.cc
++++ b/chrome/browser/ui/startup/startup_tab_provider.cc
+@@ -155,8 +155,10 @@
+   StartupTabs result;
+   const bool requested_container = command_line.HasSwitch("container");
+   const std::string name = command_line.GetSwitchValueUTF8("container");
+-  if (requested_container &&
+-      (!helium::containers::IsAvailable(profile) || name.empty())) {
++  const bool temporary = command_line.HasSwitch("temporary-container");
++  if ((requested_container || temporary) &&
++      (!helium::containers::IsAvailable(profile) ||
++       (requested_container && name.empty()))) {
+     // Never open an explicitly contained URL with the ordinary profile login.
+     LOG(WARNING) << "--container requires enabled named containers, a "
+                     "nonempty name and a regular profile";
+@@ -164,7 +166,9 @@
+   }
+ 
+   std::optional<content::StoragePartitionConfig> partition;
+-  if (requested_container) {
++  if (temporary) {
++    partition = helium::containers::GetTemporaryPartition(profile, name);
++  } else if (requested_container) {
+     partition = helium::containers::GetOrCreateNamedPartition(profile, name);
+   }
+   for (const auto& arg : command_line.GetArgs()) {
+--- a/chrome/browser/ui/sync/BUILD.gn
++++ b/chrome/browser/ui/sync/BUILD.gn
+@@ -46,6 +46,7 @@
+     "//components/sync_sessions",
+     "//components/tabs:public",
+     "//content/public/browser",
++    "//content/public/common",
+     "//extensions/buildflags",
+   ]
+ 
+--- a/chrome/browser/ui/sync/tab_contents_synced_tab_delegate.cc
++++ b/chrome/browser/ui/sync/tab_contents_synced_tab_delegate.cc
+@@ -9,6 +9,7 @@
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/supervised_user/supervised_user_navigation_observer.h"
+ #include "components/sessions/content/content_serialized_navigation_builder.h"
++#include "components/sessions/core/serialized_navigation_entry.h"
+ #include "components/sync/base/features.h"
+ #include "components/sync_sessions/sync_sessions_client.h"
+ #include "components/sync_sessions/synced_window_delegate.h"
+@@ -16,7 +17,10 @@
+ #include "content/public/browser/favicon_status.h"
+ #include "content/public/browser/navigation_controller.h"
+ #include "content/public/browser/navigation_entry.h"
++#include "content/public/browser/security_principal.h"
++#include "content/public/browser/site_instance.h"
+ #include "content/public/browser/web_contents.h"
++#include "content/public/common/helium_named_containers.h"
+ #include "extensions/buildflags/buildflags.h"
+ 
+ #if BUILDFLAG(ENABLE_EXTENSIONS)
+@@ -130,6 +134,22 @@
+ 
+ bool TabContentsSyncedTabDelegate::ShouldSync(
+     sync_sessions::SyncSessionsClient* sessions_client) {
++  const auto& config = web_contents_->GetSiteInstance()
++                           ->GetSecurityPrincipal()
++                           .GetStoragePartitionConfig();
++  if (config.partition_domain() == helium::containers::kPartitionDomain &&
++      config.partition_name().starts_with("t-")) {
++    return false;
++  }
++  // A flag-disabled restore can have an ordinary SiteInstance and a sealed
++  // temporary navigation. It must also stay out of Open Tabs sync.
++  for (int i = 0; i < GetEntryCount(); ++i) {
++    if (sessions::SerializedNavigationEntry::ContainerIdFromStorageURL(
++            GetVirtualURLAtIndex(i))
++            .starts_with("t-")) {
++      return false;
++    }
++  }
+   if (sessions_client->GetSyncedWindowDelegatesGetter()->FindById(
+           GetWindowId()) == nullptr) {
+     return false;
+--- a/chrome/browser/ui/tabs/BUILD.gn
++++ b/chrome/browser/ui/tabs/BUILD.gn
+@@ -195,6 +195,7 @@
+       "//chrome/browser/ui/navigator",
+       "//chrome/browser/ui/send_tab_to_self",
+       "//chrome/browser/ui/web_applications",
++      "//chrome/browser/ui:browser_tabstrip",
+       "//chrome/browser/ui:chrome_pages",
+       "//chrome/browser/ui:ui_features",
+       "//chrome/browser/user_education",
+@@ -556,6 +557,7 @@
+     }
+ 
+     deps = [
++      "//chrome/browser/containers",
+       ":tab_group",
+       ":tab_model",
+       ":tab_strip",
+@@ -1027,7 +1029,13 @@
+     ]
+     if (is_mac) {
+       sources += [ "named_container_ui_browsertest.mm" ]
+-      deps += [ "//ui/menus" ]
++      deps += [
++        "//chrome/browser/containers",
++        "//chrome/browser/ui/views/frame:browser_view_header",
++        "//chrome/browser/ui/views/tabs/shared",
++        "//ui/menus",
++        "//ui/views",
++      ]
+     }
+   }
+ 
+--- a/chrome/browser/ui/tabs/named_container_menu_model.cc
++++ b/chrome/browser/ui/tabs/named_container_menu_model.cc
+@@ -6,12 +6,15 @@
+ #include "chrome/browser/ui/tabs/named_container_menu_model.h"
+ 
+ #include <algorithm>
++#include <set>
+ #include <utility>
+ 
++#include "base/hash/hash.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "chrome/app/vector_icons/vector_icons.h"
+ #include "chrome/browser/containers/named_containers.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/browser_tabstrip.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/chrome_pages.h"
+ #include "chrome/browser/ui/navigator/browser_navigator.h"
+@@ -25,14 +28,18 @@
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/common/helium_named_containers.h"
+ #include "ui/base/models/image_model.h"
++#include "ui/gfx/canvas.h"
++#include "ui/gfx/image/canvas_image_source.h"
+ #include "ui/gfx/image/image_skia.h"
++#include "ui/gfx/image/image_skia_operations.h"
+ #include "ui/gfx/paint_vector_icon.h"
+ 
+ namespace {
+ // Disjoint from the tab group's, split view's and other tab submenus.
+ constexpr int kNoContainer = 2200;
+ constexpr int kManage = 2201;
+-constexpr int kFirstContainer = 2202;
++constexpr int kNewTemporary = 2202;
++constexpr int kFirstContainer = 2203;
+ constexpr int kLastContainer = 3201;
+ 
+ GURL ReopenUrl(tabs::TabInterface* tab, BrowserWindowInterface* browser) {
+@@ -50,6 +57,71 @@
+   }
+   return {};
+ }
++
++// Symmetric identicon image generator for temporary containers.
++class TemporaryContainerForegroundIconImageSource
++    : public gfx::CanvasImageSource {
++ public:
++  TemporaryContainerForegroundIconImageSource(std::string_view container_id,
++                                              int icon_size,
++                                              SkColor color)
++      : gfx::CanvasImageSource(gfx::Size(icon_size, icon_size)),
++        seed_(base::PersistentHash(container_id)),
++        color_(color) {}
++
++  void Draw(gfx::Canvas* canvas) override {
++    const uint32_t pattern = (seed_ ^ (seed_ >> 15)) & 0x7fff;
++
++    constexpr int kGrid = 5;
++    // Match the visual safe area used by 16x16 vector icons (~12px-ish content)
++    // so temporary identicons feel balanced next to them.
++    constexpr float kContentBoxRatio = 12.0f / 16.0f;
++    // Keep a little spacing between tiles to avoid a too-heavy blob.
++    constexpr float kCellFillRatio = 0.9f;
++    const float icon_size = size().width();
++    const float content_box_size = icon_size * kContentBoxRatio;
++    const float content_box_inset = (icon_size - content_box_size) / 2.0f;
++    const float cell = content_box_size / static_cast<float>(kGrid);
++    const float cell_size = cell * kCellFillRatio;
++    const float cell_inset = (cell - cell_size) / 2.0f;
++
++    cc::PaintFlags cell_flags;
++    cell_flags.setAntiAlias(true);
++    cell_flags.setColor(color_);
++
++    // One row per horizontal band in the 5x5 grid; y is the top of the cell
++    // for this row inside the content box.
++    for (int row = 0; row < kGrid; ++row) {
++      const float y = content_box_inset + row * cell + cell_inset;
++      // Only the left three columns are encoded in the pattern (15 bits);
++      // the right two are filled by mirroring for left-right symmetry.
++      for (int col = 0; col < 3; ++col) {
++        const int bit_index = row * 3 + col;
++        // Skip the cell if the bit is not set.
++        if (((pattern >> bit_index) & 1u) == 0u) {
++          continue;
++        }
++
++        // Render the cell and its mirror on the opposite side.
++        const float x = content_box_inset + col * cell + cell_inset;
++        canvas->DrawRect(gfx::RectF(x, y, cell_size, cell_size), cell_flags);
++
++        // Mirror the cell into the opposite side.
++        const int mirror_col = kGrid - 1 - col;
++        if (mirror_col != col) {
++          const float mirror_x =
++              content_box_inset + mirror_col * cell + cell_inset;
++          canvas->DrawRect(gfx::RectF(mirror_x, y, cell_size, cell_size),
++                           cell_flags);
++        }
++      }
++    }
++  }
++
++ private:
++  const uint32_t seed_;
++  const SkColor color_;
++};
+ 
+ const gfx::VectorIcon& MenuIcon(helium::containers::Icon icon) {
+   using Icon = helium::containers::Icon;
+@@ -57,19 +129,31 @@
+     case Icon::kPerson:
+       return kPersonFilledIcon;
+     case Icon::kWork:
+-      return vector_icons::kDomainIcon;
++      return kLeoContainerWorkIcon;
+     case Icon::kGroup:
+       return kGroupCustomIcon;
+     case Icon::kStar:
+       return vector_icons::kStarFilledIcon;
+     case Icon::kHome:
+-      return vector_icons::kHomeIcon;
++      return kLeoContainerPersonalIcon;
++    case Icon::kSocial:
++      return kLeoContainerSocialIcon;
++    case Icon::kSchool:
++      return kLeoContainerSchoolIcon;
+     case Icon::kTravel:
+       return vector_icons::kLocationOnIcon;
+   }
+   NOTREACHED();
+ }
+ }  // namespace
++
++NamedContainerMenuModel::NamedContainerMenuModel(
++    BrowserWindowInterface* browser)
++    : ui::SimpleMenuModel(this),
++      for_new_tab_(true),
++      browser_(browser->GetWeakPtr()) {
++  BuildMenu(browser);
++}
+ 
+ NamedContainerMenuModel::NamedContainerMenuModel(
+     BrowserWindowInterface* browser,
+@@ -77,8 +161,36 @@
+     : ui::SimpleMenuModel(this),
+       browser_(browser->GetWeakPtr()),
+       tabs_(std::move(tabs)) {
+-  AddCheckItemWithStringId(kNoContainer, IDS_HELIUM_CONTAINER_NONE);
+-  for (const auto& entry : helium::containers::List(browser->GetProfile())) {
++  BuildMenu(browser);
++}
++
++void NamedContainerMenuModel::BuildMenu(BrowserWindowInterface* browser) {
++  AddCheckItemWithStringId(kNoContainer, for_new_tab_
++                                             ? IDS_HELIUM_NEW_TAB_NO_CONTAINER
++                                             : IDS_HELIUM_CONTAINER_NONE);
++  auto entries = helium::containers::List(browser->GetProfile());
++  // Brave includes a temporary container in the tab submenu only when it
++  // belongs to the selection. The plus button lists permanent containers.
++  std::set<std::string> selected;
++  for (const auto& handle : tabs_) {
++    auto* tab = handle.Get();
++    if (!tab || tab->GetBrowserWindowInterface() != browser) {
++      continue;
++    }
++    const auto& config = tab->GetContents()
++                             ->GetSiteInstance()
++                             ->GetSecurityPrincipal()
++                             .GetStoragePartitionConfig();
++    if (config.partition_domain() != helium::containers::kPartitionDomain ||
++        !selected.insert(config.partition_name()).second) {
++      continue;
++    }
++    if (auto entry = helium::containers::FindTemporary(
++            browser->GetProfile(), config.partition_name())) {
++      entries.push_back(std::move(*entry));
++    }
++  }
++  for (const auto& entry : entries) {
+     const int command = kFirstContainer + static_cast<int>(ids_.size());
+     if (command > kLastContainer) {
+       break;
+@@ -86,18 +198,32 @@
+     ids_.push_back(entry.id);
+     AddCheckItem(command, base::UTF8ToUTF16(entry.name));
+     SetMayHaveMnemonicsAt(GetItemCount() - 1, false);
++    gfx::ImageSkia foreground =
++        entry.id.starts_with("t-")
++            ? gfx::ImageSkia(
++                  std::make_unique<TemporaryContainerForegroundIconImageSource>(
++                      entry.id, 12, SK_ColorWHITE),
++                  gfx::Size(12, 12))
++            : gfx::CreateVectorIcon(MenuIcon(entry.icon), 12, SK_ColorWHITE);
+     SetIcon(GetItemCount() - 1,
+-            ui::ImageModel::FromImageSkia(gfx::CreateVectorIcon(
+-                MenuIcon(entry.icon), 16, SkColorSetA(entry.color, 0xff))));
++            ui::ImageModel::FromImageSkia(
++                gfx::ImageSkiaOperations::CreateImageWithCircleBackground(
++                    8, SkColorSetA(entry.color, 0xff), foreground)));
+   }
+   AddSeparator(ui::NORMAL_SEPARATOR);
+-  AddItemWithStringId(kManage, IDS_HELIUM_CONTAINER_MANAGE);
++  AddItemWithStringId(kNewTemporary, IDS_HELIUM_CONTAINER_NEW_TEMPORARY);
++  AddItemWithStringId(kManage, for_new_tab_
++                                   ? IDS_HELIUM_NEW_TAB_MANAGE_CONTAINERS
++                                   : IDS_HELIUM_CONTAINER_MANAGE);
+ }
+ 
+ NamedContainerMenuModel::~NamedContainerMenuModel() = default;
+ 
+ bool NamedContainerMenuModel::IsCommandIdChecked(int command) const {
+-  if (!browser_ || command == kManage) {
++  if (for_new_tab_) {
++    return command == kNoContainer;
++  }
++  if (!browser_ || command == kManage || command == kNewTemporary) {
+     return false;
+   }
+   for (const auto& handle : tabs_) {
+@@ -126,7 +252,7 @@
+   if (!browser_ || !helium::containers::IsAvailable(browser_->GetProfile())) {
+     return false;
+   }
+-  if (command == kManage) {
++  if (for_new_tab_ || command == kManage) {
+     return true;
+   }
+   return std::ranges::any_of(tabs_, [this](auto handle) {
+@@ -143,7 +269,10 @@
+     return;
+   }
+   std::optional<content::StoragePartitionConfig> partition;
+-  if (command != kNoContainer) {
++  if (command == kNewTemporary) {
++    partition =
++        helium::containers::GetTemporaryPartition(browser_->GetProfile());
++  } else if (command != kNoContainer) {
+     size_t index = static_cast<size_t>(command - kFirstContainer);
+     if (index >= ids_.size() ||
+         !helium::containers::HasId(browser_->GetProfile(), ids_[index])) {
+@@ -153,16 +282,22 @@
+         browser_->GetProfile(), helium::containers::kPartitionDomain,
+         ids_[index], false);
+   }
+-  // Opening a tab can dismiss and destroy the menu. Work from local handles.
++  // Navigation may dismiss and destroy this model. Snapshot the URLs first.
++  std::vector<GURL> urls;
++  if (for_new_tab_) {
++    urls.push_back(chrome::GetNewTabURL(browser_.get()));
++  } else {
++    for (const auto& handle : tabs_) {
++      auto url = ReopenUrl(handle.Get(), browser_.get());
++      if (url.is_valid()) {
++        urls.push_back(std::move(url));
++      }
++    }
++  }
+   const auto browser = browser_;
+-  const auto tabs = tabs_;
+-  for (const auto& handle : tabs) {
++  for (const auto& url : urls) {
+     if (!browser) {
+       return;
+-    }
+-    const GURL url = ReopenUrl(handle.Get(), browser.get());
+-    if (!url.is_valid()) {
+-      continue;
+     }
+     NavigateParams params(browser.get(), url, ui::PAGE_TRANSITION_TYPED);
+     params.disposition = WindowOpenDisposition::kNewForegroundTab;
+--- a/chrome/browser/ui/tabs/named_container_menu_model.h
++++ b/chrome/browser/ui/tabs/named_container_menu_model.h
+@@ -18,6 +18,7 @@
+ class NamedContainerMenuModel : public ui::SimpleMenuModel,
+                                 public ui::SimpleMenuModel::Delegate {
+  public:
++  explicit NamedContainerMenuModel(BrowserWindowInterface* browser);
+   NamedContainerMenuModel(BrowserWindowInterface* browser,
+                           std::vector<tabs::TabHandle> tabs);
+   ~NamedContainerMenuModel() override;
+@@ -26,6 +27,8 @@
+   void ExecuteCommand(int command_id, int event_flags) override;
+ 
+  private:
++  void BuildMenu(BrowserWindowInterface* browser);
++  bool for_new_tab_ = false;
+   base::WeakPtr<BrowserWindowInterface> browser_;
+   std::vector<tabs::TabHandle> tabs_;
+   std::vector<std::string> ids_;
+--- a/chrome/browser/ui/tabs/named_container_ui_browsertest.mm
++++ b/chrome/browser/ui/tabs/named_container_ui_browsertest.mm
+@@ -6,17 +6,26 @@
+ 
+ #include "base/strings/sys_string_conversions.h"
+ #include "base/test/scoped_feature_list.h"
++#include "chrome/browser/containers/named_containers.h"
++#include "chrome/browser/ui/browser_element_identifiers.h"
+ #include "chrome/browser/ui/tabs/tab_menu_model.h"
+ #include "chrome/browser/ui/tabs/tab_menu_model_delegate.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "chrome/browser/ui/tabs/vertical_tab_strip_state_controller.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
++#include "chrome/browser/ui/views/tabs/shared/new_tab_button_menu_model.h"
+ #include "chrome/test/base/in_process_browser_test.h"
+ #include "chrome/test/base/ui_test_utils.h"
++#include "content/public/browser/security_principal.h"
++#include "content/public/browser/site_instance.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/common/helium_named_containers.h"
+ #include "content/public/test/browser_test.h"
+ #include "content/public/test/browser_test_utils.h"
+ #include "net/test/embedded_test_server/embedded_test_server.h"
++#include "ui/base/mojom/menu_source_type.mojom.h"
+ #import "ui/menus/cocoa/menu_controller.h"
++#include "ui/views/interaction/element_tracker_views.h"
+ 
+ namespace {
+ class NamedContainerUiTest : public InProcessBrowserTest {
+@@ -54,6 +63,53 @@
+       [submenu performActionForItemAtIndex:index];
+     }
+     return true;
++  }
++
++  // Dispatch the production context-menu event to the visible plus button.
++  // Capture the NSMenu that AppKit actually tracks, then activate its item.
++  void SelectPlus(NSString* title, bool vertical = false) {
++    auto* browser_view = BrowserView::GetBrowserViewForBrowser(browser());
++    auto* button =
++        views::ElementTrackerViews::GetInstance()->GetFirstMatchingView(
++            kNewTabButtonElementId, browser_view->GetElementContext(), true);
++    ASSERT_TRUE(button);
++    if (vertical) {
++      EXPECT_EQ("VerticalNewTabButton", button->GetClassName());
++    }
++    __block NSMenu* shown = nil;
++    id observer = [NSNotificationCenter.defaultCenter
++        addObserverForName:NSMenuDidBeginTrackingNotification
++                    object:nil
++                     queue:nil
++                usingBlock:^(NSNotification* note) {
++                  shown = note.object;
++                  [shown
++                      performSelector:@selector(cancelTracking)
++                           withObject:nil
++                           afterDelay:0
++                              inModes:@[
++                                NSEventTrackingRunLoopMode, NSDefaultRunLoopMode
++                              ]];
++                }];
++    button->ShowContextMenu(button->GetBoundsInScreen().CenterPoint(),
++                            ui::mojom::MenuSourceType::kMouse);
++    [NSNotificationCenter.defaultCenter removeObserver:observer];
++    ASSERT_TRUE(shown);
++    NSArray* titles = [shown.itemArray valueForKey:@"title"];
++    ASSERT_EQ(8, shown.numberOfItems);
++    NSArray* expected = @[
++      @"No Container", @"Personal", @"Work", @"Social", @"School", @"",
++      @"New Temporary Container", @"Manage Containers"
++    ];
++    EXPECT_TRUE([titles isEqual:expected]);
++    EXPECT_EQ(NSControlStateValueOn, [shown itemAtIndex:0].state);
++    for (NSInteger i = 1; i <= 4; ++i) {
++      EXPECT_TRUE([shown itemAtIndex:i].image);
++    }
++    EXPECT_TRUE([shown itemAtIndex:5].isSeparatorItem);
++    const NSInteger index = [shown indexOfItemWithTitle:title];
++    ASSERT_GE(index, 0);
++    [shown performActionForItemAtIndex:index];
+   }
+ 
+   void InstallSelectors(content::WebContents* settings) {
+@@ -183,6 +239,69 @@
+   EXPECT_EQ("", content::EvalJs(active(), "document.cookie"));
+ }
+ 
++IN_PROC_BROWSER_TEST_F(NamedContainerUiTest, PlusMenuAndTemporaryIsolation) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  const GURL site = embedded_test_server()->GetURL("/title1.html");
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), site));
++  ASSERT_TRUE(
++      content::ExecJs(active(), "document.cookie='login=ordinary; path=/'"));
++  auto visit = [&](NSString* item, std::string_view cookie) {
++    int before = strip()->count();
++    ASSERT_NO_FATAL_FAILURE(SelectPlus(item));
++    ASSERT_EQ(before + 1, strip()->count());
++    ASSERT_TRUE(content::WaitForLoadStop(active()));
++    EXPECT_NE(site, active()->GetLastCommittedURL());
++    ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), site));
++    EXPECT_EQ(std::string(cookie),
++              content::EvalJs(active(), "document.cookie"));
++  };
++  ASSERT_NO_FATAL_FAILURE(visit(@"Work", ""));
++  ASSERT_TRUE(
++      content::ExecJs(active(), "document.cookie='login=work; path=/'"));
++  ASSERT_NO_FATAL_FAILURE(visit(@"Personal", ""));
++  ASSERT_NO_FATAL_FAILURE(visit(@"New Temporary Container", ""));
++  const auto first = active()
++                         ->GetSiteInstance()
++                         ->GetSecurityPrincipal()
++                         .GetStoragePartitionConfig();
++  EXPECT_TRUE(first.partition_name().starts_with("t-"));
++  ASSERT_TRUE(
++      content::ExecJs(active(), "document.cookie='login=temporary; path=/'"));
++  const auto metadata = helium::containers::FindTemporary(
++      browser()->GetProfile(), first.partition_name());
++  ASSERT_TRUE(metadata);
++  ASSERT_TRUE(Select(metadata->name));
++  ASSERT_TRUE(content::WaitForLoadStop(active()));
++  EXPECT_EQ("login=temporary", content::EvalJs(active(), "document.cookie"));
++  ASSERT_NO_FATAL_FAILURE(visit(@"New Temporary Container", ""));
++  const auto second = active()
++                          ->GetSiteInstance()
++                          ->GetSecurityPrincipal()
++                          .GetStoragePartitionConfig();
++  EXPECT_NE(first, second);
++  ASSERT_NO_FATAL_FAILURE(visit(@"No Container", "login=ordinary"));
++  ASSERT_NO_FATAL_FAILURE(visit(@"Work", "login=work"));
++  ASSERT_NO_FATAL_FAILURE(SelectPlus(@"Manage Containers"));
++  ASSERT_TRUE(content::WaitForLoadStop(active()));
++  EXPECT_EQ("/containers", active()->GetLastCommittedURL().path());
++}
++
++IN_PROC_BROWSER_TEST_F(NamedContainerUiTest, VerticalPlusMenu) {
++  auto* controller = tabs::VerticalTabStripStateController::From(browser());
++  ASSERT_TRUE(controller);
++  controller->SetVerticalTabsEnabled(true);
++  RunScheduledLayouts();
++  ASSERT_TRUE(controller->ShouldDisplayVerticalTabs());
++  ASSERT_NO_FATAL_FAILURE(SelectPlus(@"New Temporary Container", true));
++  ASSERT_TRUE(content::WaitForLoadStop(active()));
++  const auto& config = active()
++                           ->GetSiteInstance()
++                           ->GetSecurityPrincipal()
++                           .GetStoragePartitionConfig();
++  EXPECT_EQ(helium::containers::kPartitionDomain, config.partition_domain());
++  EXPECT_TRUE(config.partition_name().starts_with("t-"));
++}
++
+ class NamedContainerUiDisabledTest : public NamedContainerUiTest {
+  public:
+   NamedContainerUiDisabledTest() : NamedContainerUiTest(false) {}
+@@ -200,6 +319,12 @@
+   )JS"));
+   TabMenuModel menu(nullptr, TabMenuModelDelegate::From(browser()), strip(),
+                     strip()->active_index());
++  auto plus = NewTabButtonMenuModel::CreateForButton(browser());
++  if (plus) {
++    for (size_t i = 0; i < plus->GetItemCount(); ++i) {
++      EXPECT_NE(u"New Temporary Container", plus->GetLabelAt(i));
++    }
++  }
+   EXPECT_FALSE(menu.GetIndexOfCommandId(TabStripModel::CommandOpenInContainer));
+   EXPECT_FALSE(strip()->IsContextMenuCommandEnabled(
+       strip()->active_index(), TabStripModel::CommandOpenInContainer));
+--- a/chrome/browser/ui/tabs/pinned_tab_codec.cc
++++ b/chrome/browser/ui/tabs/pinned_tab_codec.cc
+@@ -9,6 +9,7 @@
+ #include <utility>
+ 
+ #include "base/values.h"
++#include "chrome/browser/containers/named_containers.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
+@@ -89,7 +90,9 @@
+   }
+   GURL original =
+       sessions::SerializedNavigationEntry::UnwrapContainerURL(url, *id);
+-  if (!original.is_valid()) {
++  if (!original.is_valid() ||
++      (id->starts_with("t-") && helium::containers::IsAvailable(profile) &&
++       !helium::containers::FindTemporary(profile, *id))) {
+     return std::nullopt;
+   }
+   StartupTab tab(
+--- a/chrome/browser/ui/views/tabs/new_tab_button.cc
++++ b/chrome/browser/ui/views/tabs/new_tab_button.cc
+@@ -6,10 +6,8 @@
+ 
+ #include <memory>
+ 
+-#include "base/feature_list.h"
+ #include "chrome/browser/ui/browser_element_identifiers.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+-#include "chrome/browser/ui/ui_features.h"
+ #include "chrome/browser/ui/views/helium/native_frame_materials.h"
+ #include "chrome/browser/ui/views/tabs/shared/new_tab_button_menu_model.h"
+ #include "chrome/browser/ui/views/tabs/tab_strip.h"
+@@ -38,9 +36,12 @@
+     View* source,
+     const gfx::Point& point,
+     ui::mojom::MenuSourceType source_type) {
+-  if (base::FeatureList::IsEnabled(features::kNewTabButtonContextMenu)) {
+-    context_menu_model_ = std::make_unique<NewTabButtonMenuModel>(browser_);
+-
++  if (context_menu_runner_ && context_menu_runner_->IsRunning()) {
++    return;
++  }
++  context_menu_runner_.reset();
++  context_menu_model_ = NewTabButtonMenuModel::CreateForButton(browser_);
++  if (context_menu_model_) {
+     int32_t menu_runner_flags =
+         views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU;
+ 
+--- a/chrome/browser/ui/views/tabs/new_tab_button.h
++++ b/chrome/browser/ui/views/tabs/new_tab_button.h
+@@ -46,7 +46,7 @@
+   void UpdateBackground() override;
+ 
+  private:
+-  std::unique_ptr<NewTabButtonMenuModel> context_menu_model_;
++  std::unique_ptr<ui::SimpleMenuModel> context_menu_model_;
+   std::unique_ptr<views::MenuRunner> context_menu_runner_;
+   raw_ptr<BrowserWindowInterface> browser_;
+ };
+--- a/chrome/browser/ui/views/tabs/shared/BUILD.gn
++++ b/chrome/browser/ui/views/tabs/shared/BUILD.gn
+@@ -41,6 +41,9 @@
+     "//chrome/app:generated_resources_grit",
+     "//chrome/app/vector_icons",
+     "//chrome/browser:primitives",
++    "//chrome/browser/containers",
++    "//chrome/browser/ui:ui_features",
++    "//chrome/browser/ui/tabs:tab_menu_impl",
+     "//chrome/browser/ui:browser_actions",
+     "//chrome/browser/ui:browser_commands",
+     "//chrome/browser/ui:browser_window_header",
+--- a/chrome/browser/ui/views/tabs/shared/new_tab_button.cc
++++ b/chrome/browser/ui/views/tabs/shared/new_tab_button.cc
+@@ -4,14 +4,12 @@
+ 
+ #include "chrome/browser/ui/views/tabs/shared/new_tab_button.h"
+ 
+-#include "base/feature_list.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/ui/actions/chrome_action_id.h"
+ #include "chrome/browser/ui/browser_actions.h"
+ #include "chrome/browser/ui/browser_commands.h"
+ #include "chrome/browser/ui/browser_element_identifiers.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+-#include "chrome/browser/ui/ui_features.h"
+ #include "chrome/browser/ui/views/tabs/shared/new_tab_button_menu_model.h"
+ #include "ui/actions/actions.h"
+ #include "ui/base/metadata/metadata_impl_macros.h"
+@@ -81,12 +79,15 @@
+     views::View* source,
+     const gfx::Point& point,
+     ui::mojom::MenuSourceType source_type) {
+-  if (base::FeatureList::IsEnabled(features::kNewTabButtonContextMenu)) {
++  if (context_menu_runner_ && context_menu_runner_->IsRunning()) {
++    return;
++  }
++  context_menu_runner_.reset();
++  context_menu_model_ = NewTabButtonMenuModel::CreateForButton(browser_);
++  if (context_menu_model_) {
+     if (on_context_menu_will_show_callback_) {
+       on_context_menu_will_show_callback_.Run();
+     }
+-
+-    context_menu_model_ = std::make_unique<NewTabButtonMenuModel>(browser_);
+ 
+     int32_t menu_runner_flags =
+         views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU;
+--- a/chrome/browser/ui/views/tabs/shared/new_tab_button.h
++++ b/chrome/browser/ui/views/tabs/shared/new_tab_button.h
+@@ -16,7 +16,9 @@
+ #include "ui/views/context_menu_controller.h"
+ 
+ class BrowserWindowInterface;
+-class NewTabButtonMenuModel;
++namespace ui {
++class SimpleMenuModel;
++}
+ 
+ namespace views {
+ class ActionViewController;
+@@ -53,7 +55,7 @@
+   void OnContextMenuClosed();
+ 
+   std::unique_ptr<views::ActionViewController> action_view_controller_;
+-  std::unique_ptr<NewTabButtonMenuModel> context_menu_model_;
++  std::unique_ptr<ui::SimpleMenuModel> context_menu_model_;
+   std::unique_ptr<views::MenuRunner> context_menu_runner_;
+ 
+   base::RepeatingClosure on_context_menu_will_show_callback_;
+--- a/chrome/browser/ui/views/tabs/shared/new_tab_button_menu_model.cc
++++ b/chrome/browser/ui/views/tabs/shared/new_tab_button_menu_model.cc
+@@ -7,14 +7,18 @@
+ #include <optional>
+ #include <string>
+ 
++#include "base/feature_list.h"
+ #include "base/metrics/user_metrics.h"
+ #include "chrome/app/chrome_command_ids.h"
++#include "chrome/browser/containers/named_containers.h"
+ #include "chrome/browser/ui/browser_commands.h"
+ #include "chrome/browser/ui/browser_window.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/tabs/named_container_menu_model.h"
+ #include "chrome/browser/ui/tabs/split_tab_metrics.h"
+ #include "chrome/browser/ui/tabs/tab_group_model.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "chrome/browser/ui/ui_features.h"
+ #include "chrome/grit/generated_resources.h"
+ #include "components/tab_groups/tab_group_id.h"
+ #include "components/tabs/public/tab_group.h"
+@@ -28,6 +32,20 @@
+ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(NewTabButtonMenuModel, kNewSplitView);
+ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(NewTabButtonMenuModel,
+                                       kCreateNewTabGroup);
++
++std::unique_ptr<ui::SimpleMenuModel> NewTabButtonMenuModel::CreateForButton(
++    BrowserWindowInterface* browser) {
++  if (!browser) {
++    return nullptr;
++  }
++  if (helium::containers::IsAvailable(browser->GetProfile())) {
++    return std::make_unique<NamedContainerMenuModel>(browser);
++  }
++  if (base::FeatureList::IsEnabled(features::kNewTabButtonContextMenu)) {
++    return std::make_unique<NewTabButtonMenuModel>(browser);
++  }
++  return nullptr;
++}
+ 
+ NewTabButtonMenuModel::NewTabButtonMenuModel(BrowserWindowInterface* browser)
+     : ui::SimpleMenuModel(this), browser_(browser) {
+--- a/chrome/browser/ui/views/tabs/shared/new_tab_button_menu_model.h
++++ b/chrome/browser/ui/views/tabs/shared/new_tab_button_menu_model.h
+@@ -4,6 +4,8 @@
+ 
+ #ifndef CHROME_BROWSER_UI_VIEWS_TABS_SHARED_NEW_TAB_BUTTON_MENU_MODEL_H_
+ #define CHROME_BROWSER_UI_VIEWS_TABS_SHARED_NEW_TAB_BUTTON_MENU_MODEL_H_
++
++#include <memory>
+ 
+ #include "base/memory/raw_ptr.h"
+ #include "ui/base/interaction/element_identifier.h"
+@@ -18,6 +20,9 @@
+   DECLARE_CLASS_ELEMENT_IDENTIFIER_VALUE(kNewTabInGroup);
+   DECLARE_CLASS_ELEMENT_IDENTIFIER_VALUE(kNewSplitView);
+   DECLARE_CLASS_ELEMENT_IDENTIFIER_VALUE(kCreateNewTabGroup);
++  // Both horizontal and vertical plus buttons use this context-menu policy.
++  static std::unique_ptr<ui::SimpleMenuModel> CreateForButton(
++      BrowserWindowInterface* browser);
+   explicit NewTabButtonMenuModel(BrowserWindowInterface* browser);
+   NewTabButtonMenuModel(const NewTabButtonMenuModel&) = delete;
+   NewTabButtonMenuModel& operator=(const NewTabButtonMenuModel&) = delete;
+--- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
++++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
+@@ -633,6 +633,8 @@
+       {"containerPerson", IDS_HELIUM_CONTAINER_PERSON},
+       {"containerWork", IDS_HELIUM_CONTAINER_WORK},
+       {"containerGroup", IDS_HELIUM_CONTAINER_GROUP},
++      {"containerSocial", IDS_HELIUM_CONTAINER_SOCIAL},
++      {"containerSchool", IDS_HELIUM_CONTAINER_SCHOOL},
+       {"containerStar", IDS_HELIUM_CONTAINER_STAR},
+       {"containerHome", IDS_HELIUM_CONTAINER_HOME},
+       {"containerTravel", IDS_HELIUM_CONTAINER_TRAVEL},
+--- a/chrome/common/BUILD.gn
++++ b/chrome/common/BUILD.gn
+@@ -561,6 +561,7 @@
+     "chrome_result_codes.h",
+     "pref_font_script_names-inl.h",
+     "pref_font_webkit_names.h",
++    "helium_temporary_container_pref.h",
+     "pref_names.h",
+   ]
+ 
+--- /dev/null
++++ b/chrome/common/helium_temporary_container_pref.h
+@@ -0,0 +1,13 @@
++// Copyright (c) 2026 The Brave Authors. All rights reserved.
++// This Source Code Form is subject to the terms of the Mozilla Public
++// License, v. 2.0. If a copy of the MPL was not distributed with this file,
++// You can obtain one at https://mozilla.org/MPL/2.0/.
++
++#ifndef CHROME_COMMON_HELIUM_TEMPORARY_CONTAINER_PREF_H_
++#define CHROME_COMMON_HELIUM_TEMPORARY_CONTAINER_PREF_H_
++namespace prefs {
++// Local runtime metadata. Never register this preference for sync.
++inline constexpr char kHeliumTemporaryContainers[] =
++    "helium.containers.temporary";
++}  // namespace prefs
++#endif  // CHROME_COMMON_HELIUM_TEMPORARY_CONTAINER_PREF_H_
+--- a/components/sessions/core/serialized_navigation_entry.cc
++++ b/components/sessions/core/serialized_navigation_entry.cc
+@@ -98,6 +98,12 @@
+ namespace {
+ constexpr char kNamedContainerId[] = "helium.named_container_id";
+ constexpr char kContainerSchemePrefix[] = "containers+";
++bool IsValidContainerId(std::string_view id) {
++  if (id.starts_with("t-")) {
++    id.remove_prefix(2);
++  }
++  return base::Uuid::ParseLowercase(id).is_valid();
++}
+ }  // namespace
+ 
+ std::string SerializedNavigationEntry::named_container_id() const {
+@@ -106,7 +112,7 @@
+ }
+ 
+ void SerializedNavigationEntry::set_named_container_id(const std::string& id) {
+-  CHECK(base::Uuid::ParseLowercase(id).is_valid());
++  CHECK(IsValidContainerId(id));
+   extended_info_map_[kNamedContainerId] = id;
+ }
+ 
+@@ -119,14 +125,13 @@
+   if (!HasContainerScheme(url)) {
+     return {};
+   }
+-  return base::Uuid::ParseLowercase(
+-             url.scheme().substr(sizeof(kContainerSchemePrefix) - 1))
+-      .AsLowercaseString();
++  const auto id = url.scheme().substr(sizeof(kContainerSchemePrefix) - 1);
++  return IsValidContainerId(id) ? std::string(id) : std::string();
+ }
+ 
+ GURL SerializedNavigationEntry::WrapContainerURL(const GURL& url,
+                                                  std::string_view id) {
+-  if (!url.is_valid() || !base::Uuid::ParseLowercase(id).is_valid()) {
++  if (!url.is_valid() || !IsValidContainerId(id)) {
+     return GURL();
+   }
+   return GURL(base::StrCat({kContainerSchemePrefix, id, ":", url.spec()}));
+@@ -134,7 +139,7 @@
+ 
+ GURL SerializedNavigationEntry::UnwrapContainerURL(const GURL& url,
+                                                    std::string_view id) {
+-  if (!url.is_valid() || !base::Uuid::ParseLowercase(id).is_valid() ||
++  if (!url.is_valid() || !IsValidContainerId(id) ||
+       url.scheme() != base::StrCat({kContainerSchemePrefix, id})) {
+     return GURL();
+   }
+--- a/components/sync_sessions/synced_session.cc
++++ b/components/sync_sessions/synced_session.cc
+@@ -49,6 +49,11 @@
+   const std::string container_id =
+       SerializedNavigationEntry::ContainerIdFromStorageURL(
+           navigation.virtual_url());
++  if (container_id.starts_with("t-")) {
++    // A temporary identity is meaningful only on the device that created it.
++    // Leave foreign temporary sessions sealed when reading old sync data.
++    return navigation;
++  }
+   if (!container_id.empty()) {
+     navigation.set_named_container_id(container_id);
+   }

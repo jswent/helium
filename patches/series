@@ -388,3 +388,4 @@ helium/ui/hide-page-actions-flag.patch
 brave/named-containers.patch
 brave/named-container-session-restore.patch
 brave/named-container-ui.patch
+brave/temporary-containers-new-tab.patch

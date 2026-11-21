@@ -1555,6 +1555,36 @@
     "message": "Travel"
   },
   {
+    "name": "IDS_HELIUM_NEW_TAB_NO_CONTAINER",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Ordinary tab option on the new tab button.",
+    "message": "No Container"
+  },
+  {
+    "name": "IDS_HELIUM_CONTAINER_NEW_TEMPORARY",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Create a fresh temporary browsing session.",
+    "message": "New Temporary Container"
+  },
+  {
+    "name": "IDS_HELIUM_NEW_TAB_MANAGE_CONTAINERS",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Open container settings from the new tab button.",
+    "message": "Manage Containers"
+  },
+  {
+    "name": "IDS_HELIUM_CONTAINER_SOCIAL",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Social container icon option.",
+    "message": "Social"
+  },
+  {
+    "name": "IDS_HELIUM_CONTAINER_SCHOOL",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "School container icon option.",
+    "message": "School"
+  },
+  {
     "name": "IDS_CONTENT_CONTEXT_SYSTEM_TRANSLATE",
     "source": "chrome/app/generated_resources.grd",
     "context": "The name of the macOS system Translate command in the content area context menu",

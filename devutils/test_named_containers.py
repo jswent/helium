@@ -180,11 +180,12 @@ def run(binary):
             with tempfile.TemporaryDirectory(prefix='helium-flag-off-') as tmp:
                 with running_browser(binary, tmp, 'about:blank', enabled=False) as (command, _):
                     for args in (['--container=Work', f'{origin}/who/should-not-load'],
+                                 ['--temporary-container', f'{origin}/who/temporary-should-not-load'],
                                  [f'{origin}/who/flag-off-ordinary']):
                         subprocess.run(command + args, check=True, timeout=25,
                                        stdout=subprocess.DEVNULL, cwd=tmp)
                     expect_visit(site, 'flag-off-ordinary', 'signed out')
-                    print('flag off: ordinary tab loaded, named URL withheld', flush=True)
+                    print('flag off: ordinary tab loaded, named and temporary URLs withheld', flush=True)
         finally:
             site.shutdown()
             thread.join()
