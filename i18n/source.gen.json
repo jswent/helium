@@ -1423,6 +1423,138 @@
     "message": "Show loading progress in the address bar"
   },
   {
+    "name": "IDS_HELIUM_CONTAINER_TITLE",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Name of the container settings page.",
+    "message": "Containers"
+  },
+  {
+    "name": "IDS_HELIUM_CONTAINER_OPEN",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Tab context submenu that opens a copy in a different browsing session.",
+    "message": "Open in container"
+  },
+  {
+    "name": "IDS_HELIUM_CONTAINER_NONE",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Ordinary tab option in the container menu.",
+    "message": "No container"
+  },
+  {
+    "name": "IDS_HELIUM_CONTAINER_MANAGE",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Menu item that opens container settings.",
+    "message": "Manage containers…"
+  },
+  {
+    "name": "IDS_HELIUM_CONTAINER_DESCRIPTION",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Description of named containers.",
+    "message": "Keep separate logins and site data in the same browser window."
+  },
+  {
+    "name": "IDS_HELIUM_CONTAINER_ADD",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Button or dialog title for creating a container.",
+    "message": "Add container"
+  },
+  {
+    "name": "IDS_HELIUM_CONTAINER_EDIT",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Dialog title for editing a container.",
+    "message": "Edit container"
+  },
+  {
+    "name": "IDS_HELIUM_CONTAINER_EDIT_NAMED",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Accessible action to edit the named container.",
+    "message": "Edit <ph name=\"NAME\">$1<ex>Work</ex></ph>"
+  },
+  {
+    "name": "IDS_HELIUM_CONTAINER_DELETE_NAMED",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Delete confirmation title and accessible action.",
+    "message": "Delete <ph name=\"NAME\">$1<ex>Work</ex></ph>"
+  },
+  {
+    "name": "IDS_HELIUM_CONTAINER_DELETE_DESCRIPTION",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Explanation of deleting a container.",
+    "message": "This clears the container’s cookies and site data. Open tabs will stay open."
+  },
+  {
+    "name": "IDS_HELIUM_CONTAINER_NAME",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Name field for a container.",
+    "message": "Name"
+  },
+  {
+    "name": "IDS_HELIUM_CONTAINER_ICON",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Label for the container icon selector.",
+    "message": "Icon"
+  },
+  {
+    "name": "IDS_HELIUM_CONTAINER_COLOR",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Label for the container color selector.",
+    "message": "Color"
+  },
+  {
+    "name": "IDS_HELIUM_CONTAINER_INVALID",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Validation error for an invalid container name.",
+    "message": "Enter a name between 1 and 20 characters."
+  },
+  {
+    "name": "IDS_HELIUM_CONTAINER_DUPLICATE",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Validation error for a duplicate name.",
+    "message": "A container with this name already exists."
+  },
+  {
+    "name": "IDS_HELIUM_CONTAINER_UNAVAILABLE",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "Error when a container has changed or is no longer available.",
+    "message": "This container could not be updated."
+  },
+  {
+    "name": "IDS_HELIUM_CONTAINER_PERSON",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "An icon option for a container.",
+    "message": "Person"
+  },
+  {
+    "name": "IDS_HELIUM_CONTAINER_WORK",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "An icon option for a container.",
+    "message": "Work"
+  },
+  {
+    "name": "IDS_HELIUM_CONTAINER_GROUP",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "An icon option for a container.",
+    "message": "Group"
+  },
+  {
+    "name": "IDS_HELIUM_CONTAINER_STAR",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "An icon option for a container.",
+    "message": "Star"
+  },
+  {
+    "name": "IDS_HELIUM_CONTAINER_HOME",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "An icon option for a container.",
+    "message": "Home"
+  },
+  {
+    "name": "IDS_HELIUM_CONTAINER_TRAVEL",
+    "source": "chrome/app/generated_resources.grd",
+    "context": "An icon option for a container.",
+    "message": "Travel"
+  },
+  {
     "name": "IDS_CONTENT_CONTEXT_SYSTEM_TRANSLATE",
     "source": "chrome/app/generated_resources.grd",
     "context": "The name of the macOS system Translate command in the content area context menu",
