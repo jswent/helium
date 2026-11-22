@@ -1,0 +1,709 @@
+Bring Brave’s container controls, ordered list and compact tab badges to Settings.
+
+--- a/chrome/app/generated_resources.grd
++++ b/chrome/app/generated_resources.grd
+@@ -20674,6 +20674,15 @@
+     <message name="IDS_HELIUM_CONTAINER_SCHOOL" desc="School container icon option.">
+       School
+     </message>
++    <message name="IDS_HELIUM_CONTAINERS_ENABLED" desc="Toggle for container commands and management.">
++      Enable Containers
++    </message>
++    <message name="IDS_HELIUM_CONTAINER_MINI_ICONS" desc="Show a compact corner badge on all container tabs.">
++      Always use mini icon for containers
++    </message>
++    <message name="IDS_HELIUM_CONTAINER_MOVE" desc="Accessible name and keyboard instructions for dragging a container.">
++      Reorder <ph name="NAME">$1<ex>Work</ex></ph> with the up and down arrow keys
++    </message>
+     <message name="IDS_HELIUM_CONTAINER_OPEN" desc="Tab context submenu that opens a copy in a different browsing session.">
+       Open in container
+     </message>
+@@ -20684,10 +20693,10 @@
+       Manage containers…
+     </message>
+     <message name="IDS_HELIUM_CONTAINER_DESCRIPTION" desc="Description of named containers.">
+-      Keep separate logins and site data in the same browser window.
++      Containers are color-coded browser tabs that isolate your browsing data, such as cookies, cache, and site storage into separate contexts.
+     </message>
+     <message name="IDS_HELIUM_CONTAINER_ADD" desc="Button or dialog title for creating a container.">
+-      Add container
++      Add new container
+     </message>
+     <message name="IDS_HELIUM_CONTAINER_EDIT" desc="Dialog title for editing a container.">
+       Edit container
+--- a/chrome/browser/containers/named_containers.cc
++++ b/chrome/browser/containers/named_containers.cc
+@@ -7,6 +7,7 @@
+ 
+ #include <algorithm>
+ #include <array>
++#include <map>
+ #include <optional>
+ #include <utility>
+ 
+@@ -23,6 +24,7 @@
+ #include "base/values.h"
+ #include "chrome/browser/containers/temporary_container_words.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "chrome/common/helium_container_prefs.h"
+ #include "chrome/common/helium_temporary_container_pref.h"
+ #include "chrome/common/pref_names.h"
+ #include "components/prefs/pref_service.h"
+@@ -95,6 +97,11 @@
+          base::FeatureList::IsEnabled(kHeliumNamedContainers);
+ }
+ 
++bool ShouldShowControls(Profile* profile) {
++  return IsAvailable(profile) &&
++         profile->GetPrefs()->GetBoolean(prefs::kHeliumContainersEnabled);
++}
++
+ std::vector<Entry> List(Profile* profile) {
+   std::vector<Entry> entries;
+   if (!IsAvailable(profile)) {
+@@ -109,11 +116,48 @@
+     }
+     entries.push_back(NamedEntry(*id, item.first, appearance));
+   }
+-  std::ranges::stable_sort(entries, {}, [](const Entry& entry) {
+-    return std::ranges::find(kDefaults, entry.id, &DefaultStyle::id) -
+-           kDefaults.begin();
++  // Pre-existing profiles and new entries use the original default ordering.
++  std::map<std::string, size_t> rank;
++  for (const auto& value : prefs->GetList(prefs::kHeliumContainerOrder)) {
++    if (value.is_string()) {
++      rank.try_emplace(value.GetString(), rank.size());
++    }
++  }
++  std::ranges::stable_sort(entries, {}, [&](const Entry& entry) {
++    auto it = rank.find(entry.id);
++    if (it != rank.end()) {
++      return it->second;
++    }
++    return rank.size() +
++           static_cast<size_t>(
++               std::ranges::find(kDefaults, entry.id, &DefaultStyle::id) -
++               kDefaults.begin());
+   });
+   return entries;
++}
++
++void Move(Profile* profile, const std::string& id, const std::string& target) {
++  if (!ShouldShowControls(profile) || id == target) {
++    return;
++  }
++  // Rebuild from the current list so a stale settings page cannot drop an
++  // entry created in another window or resurrect a deleted one.
++  auto entries = List(profile);
++  auto from = std::ranges::find(entries, id, &Entry::id);
++  auto to = std::ranges::find(entries, target, &Entry::id);
++  if (from == entries.end() || to == entries.end()) {
++    return;
++  }
++  if (from < to) {
++    std::rotate(from, from + 1, to + 1);
++  } else {
++    std::rotate(to, from, from + 1);
++  }
++  base::ListValue order;
++  for (const auto& entry : entries) {
++    order.Append(entry.id);
++  }
++  profile->GetPrefs()->SetList(prefs::kHeliumContainerOrder, std::move(order));
+ }
+ 
+ std::optional<Entry> FindTemporary(Profile* profile, const std::string& id) {
+@@ -213,7 +257,7 @@
+                  const std::string& input,
+                  int icon,
+                  int color) {
+-  if (!IsAvailable(profile)) {
++  if (!ShouldShowControls(profile)) {
+     return "containerUnavailable";
+   }
+   const auto old = NameForId(profile, id);
+@@ -257,7 +301,7 @@
+             const std::string& id,
+             base::OnceCallback<void(bool)> complete) {
+   const auto name =
+-      IsAvailable(profile) ? NameForId(profile, id) : std::nullopt;
++      ShouldShowControls(profile) ? NameForId(profile, id) : std::nullopt;
+   if (!name) {
+     std::move(complete).Run(false);
+     return;
+@@ -285,6 +329,11 @@
+                    ScopedDictPrefUpdate update(service, kAppearancePref);
+                    update->Remove(id);
+                  }
++                 {
++                   ScopedListPrefUpdate order(service,
++                                              prefs::kHeliumContainerOrder);
++                   order->EraseValue(base::Value(id));
++                 }
+                }
+                std::move(callback).Run(true);
+              },
+--- a/chrome/browser/containers/named_containers.h
++++ b/chrome/browser/containers/named_containers.h
+@@ -39,6 +39,9 @@
+ };
+ 
+ bool IsAvailable(Profile* profile);
++// Controls creation and management. Existing tabs always keep their partition.
++bool ShouldShowControls(Profile* profile);
++void Move(Profile* profile, const std::string& id, const std::string& target);
+ std::vector<Entry> List(Profile* profile);
+ std::optional<Entry> FindById(Profile* profile, const std::string& id);
+ std::optional<Entry> FindTemporary(Profile* profile, const std::string& id);
+--- a/chrome/browser/extensions/api/settings_private/prefs_util.cc
++++ b/chrome/browser/extensions/api/settings_private/prefs_util.cc
+@@ -36,6 +36,7 @@
+ #include "chrome/browser/ui/tabs/tab_strip_prefs.h"
+ #include "chrome/browser/ui/toolbar/toolbar_pref_names.h"
+ #include "chrome/common/extensions/api/settings_private.h"
++#include "chrome/common/helium_container_prefs.h"
+ #include "chrome/common/pref_names.h"
+ #include "components/autofill/core/common/autofill_prefs.h"
+ #include "components/bookmarks/common/bookmark_pref_names.h"
+@@ -222,6 +223,13 @@
+   }
+   s_allowlist = new PrefsUtil::TypedPrefMap();
+ 
++#if !BUILDFLAG(IS_ANDROID)
++  (*s_allowlist)[::prefs::kHeliumContainersEnabled] =
++      settings_api::PrefType::kBoolean;
++  (*s_allowlist)[::prefs::kHeliumContainerMiniIcons] =
++      settings_api::PrefType::kBoolean;
++#endif
++
+   // Helium layout
+   (*s_allowlist)[::prefs::kHeliumLayout] = settings_api::PrefType::kNumber;
+   (*s_allowlist)[::prefs::kHeliumVerticalRightAligned] =
+--- a/chrome/browser/resources/settings/appearance_page/containers_page.css
++++ b/chrome/browser/resources/settings/appearance_page/containers_page.css
+@@ -8,8 +8,58 @@
+  * #include=cr-shared-style-lit settings-shared-lit
+  * #css_wrapper_metadata_end */
+ 
++.list-frame {
++  border: 1px solid var(--cr-separator-color);
++  border-radius: 8px;
++  margin: 12px var(--cr-section-padding);
++  padding: 0;
++}
++
++.list-item {
++  min-height: 54px;
++  padding-inline: 12px;
++}
++
++.list-item + .list-item {
++  border-top: var(--cr-separator-line);
++}
++
++.list-item[drag-over] {
++  background: var(--cr-hover-background-color);
++}
++
+ .badge {
++  --iron-icon-width: 16px;
++  --iron-icon-height: 16px;
++  border-radius: 50%;
++  color: white;
++  flex: none;
+   margin-inline-end: 14px;
++  padding: 3px;
++}
++
++.handle {
++  align-items: center;
++  background: transparent;
++  border: 0;
++  color: var(--cr-secondary-text-color);
++  cursor: grab;
++  display: flex;
++  height: 36px;
++  justify-content: center;
++  margin-inline-end: 10px;
++  width: 32px;
++}
++
++.handle::before {
++  border-block: 2px solid currentColor;
++  content: '';
++  height: 3px;
++  width: 15px;
++}
++
++.add-row {
++  padding: 4px var(--cr-section-padding) 16px;
+ }
+ 
+ .name {
+--- a/chrome/browser/resources/settings/appearance_page/containers_page.html.ts
++++ b/chrome/browser/resources/settings/appearance_page/containers_page.html.ts
+@@ -12,13 +12,26 @@
+   return html`<!--_html_template_start_-->
+ <settings-subpage page-title="$i18n{containersTitle}" route-path="${this.routePath}">
+   <div class="cr-row first">
+-    <div class="flex cr-padded-text">$i18n{containersDescription}</div>
+-    <cr-button id="add" @click="${this.onAddClick_}">$i18n{containerAdd}</cr-button>
++    <div class="flex cr-padded-text">$i18n{containersDescription}
++      <a href="https://support.brave.app/hc/en-us/articles/39077103885325"
++          target="_blank" rel="noopener">$i18n{learnMore}</a>
++    </div>
+   </div>
+-  <div class="list-frame">
++  <settings-toggle-button id="enabled" pref-key="helium.containers.enabled"
++      icon="container16:controls" label="$i18n{containersEnabled}"></settings-toggle-button>
++  ${this.enabled_ ? html`
++    <settings-toggle-button id="mini" pref-key="helium.containers.mini_icons"
++        icon="container16:controls" label="$i18n{containerMiniIcons}"></settings-toggle-button>
++    <div class="list-frame" ?hidden="${!this.items_.length}">
+     ${repeat(this.items_, item => item.id, item => html`
+-      <div class="list-item" data-id="${item.id}">
+-        <cr-icon class="badge" icon="${ICONS[item.icon][0]}" style="color:${colorHex(item.color)}" aria-hidden="true"></cr-icon>
++      <div class="list-item" data-id="${item.id}" ?drag-over="${this.dragTarget_ === item.id}"
++          @dragover="${this.onDragover_}" @drop="${this.onDrop_}">
++        <button class="handle" draggable="true" data-id="${item.id}"
++            title="${loadTimeData.getStringF('containerMove', item.name)}"
++            aria-label="${loadTimeData.getStringF('containerMove', item.name)}"
++            @dragstart="${this.onDragstart_}" @dragend="${this.onDragend_}"
++            @keydown="${this.onMoveKeydown_}"></button>
++        <cr-icon class="badge" icon="${ICONS[item.icon][0]}" style="background-color:${colorHex(item.color)}" aria-hidden="true"></cr-icon>
+         <span class="name flex">${item.name}</span>
+         <cr-icon-button iron-icon="cr:edit-filled" class="edit"
+             aria-label="${loadTimeData.getStringF('containerEditNamed', item.name)}"
+@@ -27,7 +40,10 @@
+             aria-label="${loadTimeData.getStringF('containerDeleteNamed', item.name)}"
+             title="$i18n{delete}" data-id="${item.id}" @click="${this.onDeleteClick_}"></cr-icon-button>
+       </div>`)}
+-  </div>
++    </div>
++    <div class="add-row">
++      <cr-button id="add" @click="${this.onAddClick_}">$i18n{containerAdd}</cr-button>
++    </div>` : nothing}
+ </settings-subpage>
+ ${this.draft_ ? html`
+   <cr-dialog show-on-attach @close="${this.onDialogClose_}"
+--- a/chrome/browser/resources/settings/appearance_page/containers_page.ts
++++ b/chrome/browser/resources/settings/appearance_page/containers_page.ts
+@@ -3,6 +3,7 @@
+ // License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ // You can obtain one at https://mozilla.org/MPL/2.0/.
+ 
++import '../controls/settings_toggle_button.js';
+ import '../settings_page/settings_subpage.js';
+ import '../icons.html.js';
+ import 'chrome://resources/cr_elements/cr_button/cr_button.js';
+@@ -12,6 +13,7 @@
+ import 'chrome://resources/cr_elements/cr_input/cr_input.js';
+ import 'chrome://resources/cr_elements/icons.html.js';
+ 
++import {PrefServiceObserverMixinLit} from '/shared/settings/prefs2/pref_service_observer_mixin_lit.js';
+ import type {CrDialogElement} from 'chrome://resources/cr_elements/cr_dialog/cr_dialog.js';
+ import type {CrInputElement} from 'chrome://resources/cr_elements/cr_input/cr_input.js';
+ import {WebUiListenerMixinLit} from 'chrome://resources/cr_elements/web_ui_listener_mixin_lit.js';
+@@ -43,17 +45,21 @@
+ }
+ 
+ export class SettingsContainersPageElement extends
+-    SettingsViewMixinLit(WebUiListenerMixinLit(CrLitElement)) {
++    SettingsViewMixinLit(PrefServiceObserverMixinLit(WebUiListenerMixinLit(CrLitElement))) {
+   static get is() { return 'settings-containers-page'; }
+   static override get styles() { return getCss(); }
+   override render() { return getHtml.bind(this)(); }
+   static override get properties() {
+     return {
++      enabled_: {type: Boolean}, dragTarget_: {type: String},
+       items_: {type: Array}, draft_: {type: Object}, deleting_: {type: Boolean},
+       busy_: {type: Boolean}, error_: {type: String},
+     };
+   }
+ 
++  protected accessor enabled_ = false;
++  protected accessor dragTarget_ = '';
++  private dragging_ = '';
+   protected accessor items_: ContainerEntry[] = [];
+   protected accessor draft_: ContainerEntry|null = null;
+   protected accessor deleting_: boolean = false;
+@@ -63,12 +69,53 @@
+ 
+   override connectedCallback() {
+     super.connectedCallback();
++    this.addPrefObserver<boolean>('helium.containers.enabled', pref => {
++      this.enabled_ = pref.value;
++      if (!this.enabled_) {
++        this.onDragend_();
++        this.shadowRoot.querySelector<CrDialogElement>('cr-dialog')?.close();
++      }
++    });
+     this.addWebUiListener('named-containers-changed', (items: ContainerEntry[]) => {
+       this.items_ = items;
+     });
+     sendWithPromise<ContainerEntry[]>('getNamedContainers').then(items => {
+       this.items_ = items;
+     });
++  }
++
++  protected onDragstart_(event: DragEvent) {
++    this.dragging_ = (event.currentTarget as HTMLElement).dataset['id']!;
++    event.dataTransfer!.effectAllowed = 'move';
++    event.dataTransfer!.setData('text/plain', this.dragging_);
++  }
++
++  protected onDragover_(event: DragEvent) {
++    if (!this.dragging_) return;
++    event.preventDefault();
++    this.dragTarget_ = (event.currentTarget as HTMLElement).dataset['id']!;
++  }
++
++  protected onDrop_(event: DragEvent) {
++    if (!this.dragging_) return;
++    event.preventDefault();
++    const id = (event.currentTarget as HTMLElement).dataset['id']!;
++    chrome.send('moveNamedContainer', [this.dragging_, id]);
++    this.onDragend_();
++  }
++
++  protected onDragend_() {
++    this.dragging_ = '';
++    this.dragTarget_ = '';
++  }
++
++  protected onMoveKeydown_(event: KeyboardEvent) {
++    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
++    event.preventDefault();
++    const id = (event.currentTarget as HTMLElement).dataset['id'];
++    const index = this.items_.findIndex(item => item.id === id);
++    const target = this.items_[index + (event.key === 'ArrowUp' ? -1 : 1)];
++    if (index >= 0 && target) chrome.send('moveNamedContainer', [id, target.id]);
+   }
+ 
+   override focusBackButton() {
+@@ -127,7 +174,7 @@
+   protected onDialogClose_() {
+     this.draft_ = null;
+     const trigger = this.trigger_?.isConnected ? this.trigger_ :
+-        this.shadowRoot.querySelector<HTMLElement>('#add');
++        this.shadowRoot.querySelector<HTMLElement>(this.enabled_ ? '#add' : '#enabled');
+     trigger?.focus();
+   }
+ 
+--- a/chrome/browser/resources/settings/icons.html.ts
++++ b/chrome/browser/resources/settings/icons.html.ts
+@@ -10,6 +10,7 @@
+ // Container glyphs from Brave Nala 4.0.0, MPL-2.0.
+ const containerIcons = document.createElement('div');
+ containerIcons.innerHTML = getTrustedHTML`<cr-iconset name="container16" size="16"><svg><defs>
++    <g id="controls" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M5.455 21.8A3.255 3.255 0 0 1 2.2 18.546V16.09a3.255 3.255 0 0 1 3.255-3.255h2.454a3.255 3.255 0 0 1 3.255 3.255v2.454A3.255 3.255 0 0 1 7.909 21.8zM3.8 18.546c0 .913.74 1.654 1.655 1.654h2.454c.914 0 1.655-.74 1.655-1.654V16.09c0-.914-.741-1.655-1.655-1.655H5.455c-.914 0-1.655.741-1.655 1.655zM16.09 21.8a3.255 3.255 0 0 1-3.254-3.254V16.09a3.255 3.255 0 0 1 3.255-3.255h2.454A3.255 3.255 0 0 1 21.8 16.09v2.454a3.255 3.255 0 0 1-3.255 3.255zm-1.654-3.254c0 .913.741 1.654 1.655 1.654h2.454c.914 0 1.655-.74 1.655-1.654V16.09c0-.914-.74-1.655-1.655-1.655h-2.454c-.914 0-1.655.741-1.655 1.655zm-8.981-7.382A3.255 3.255 0 0 1 2.2 7.909V5.455A3.255 3.255 0 0 1 5.455 2.2h2.454a3.255 3.255 0 0 1 3.255 3.255v2.454a3.255 3.255 0 0 1-3.255 3.255zM3.8 7.909c0 .914.74 1.655 1.655 1.655h2.454c.914 0 1.655-.741 1.655-1.655V5.455c0-.914-.741-1.655-1.655-1.655H5.455C4.54 3.8 3.8 4.54 3.8 5.455z" clip-rule="evenodd"/><path fill="#62757e" d="M16.091 11.164a3.255 3.255 0 0 1-3.255-3.255V5.455A3.255 3.255 0 0 1 16.091 2.2h2.454A3.255 3.255 0 0 1 21.8 5.455v2.454a3.255 3.255 0 0 1-3.254 3.255z"/></g>
+     <g id="personal"><path fill="currentColor" d="M8.543 2.232a.75.75 0 0 0-1.085 0l-5.25 5.5A.75.75 0 0 0 2.75 9H4v4a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1a1 1 0 1 1 2 0v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1V9h1.25a.75.75 0 0 0 .543-1.268z"/></g>
+     <g id="work"><path fill="currentColor" fill-rule="evenodd" d="M11 4.5v-1a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v1H4a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2zM9 3H7a.5.5 0 0 0-.5.5v1h3v-1A.5.5 0 0 0 9 3m0 6.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0" clip-rule="evenodd"/><path fill="currentColor" d="M3 12.33v.17a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-.17c-.313.11-.65.17-1 .17H4c-.35 0-.687-.06-1-.17"/></g>
+     <g id="social"><path fill="currentColor" fill-rule="evenodd" d="M15 8A7 7 0 1 1 1 8a7 7 0 0 1 14 0M6 8c.552 0 1-.672 1-1.5S6.552 5 6 5s-1 .672-1 1.5S5.448 8 6 8m5-1.5c0 .828-.448 1.5-1 1.5s-1-.672-1-1.5S9.448 5 10 5s1 .672 1 1.5m.005 4.245a.75.75 0 0 0-1.06 0 2.75 2.75 0 0 1-3.89 0 .75.75 0 0 0-1.06 1.06 4.25 4.25 0 0 0 6.01 0 .75.75 0 0 0 0-1.06" clip-rule="evenodd"/></g>
+--- a/chrome/browser/ui/startup/startup_tab_provider.cc
++++ b/chrome/browser/ui/startup/startup_tab_provider.cc
+@@ -157,7 +157,7 @@
+   const std::string name = command_line.GetSwitchValueUTF8("container");
+   const bool temporary = command_line.HasSwitch("temporary-container");
+   if ((requested_container || temporary) &&
+-      (!helium::containers::IsAvailable(profile) ||
++      (!helium::containers::ShouldShowControls(profile) ||
+        (requested_container && name.empty()))) {
+     // Never open an explicitly contained URL with the ordinary profile login.
+     LOG(WARNING) << "--container requires enabled named containers, a "
+--- a/chrome/browser/ui/tabs/named_container_menu_model.cc
++++ b/chrome/browser/ui/tabs/named_container_menu_model.cc
+@@ -152,7 +152,8 @@
+ }
+ 
+ bool NamedContainerMenuModel::IsCommandIdEnabled(int command) const {
+-  if (!browser_ || !helium::containers::IsAvailable(browser_->GetProfile())) {
++  if (!browser_ ||
++      !helium::containers::ShouldShowControls(browser_->GetProfile())) {
+     return false;
+   }
+   if (for_new_tab_ || command == kManage) {
+--- a/chrome/browser/ui/tabs/named_container_ui_browsertest.mm
++++ b/chrome/browser/ui/tabs/named_container_ui_browsertest.mm
+@@ -11,6 +11,7 @@
+ #include "base/test/run_until.h"
+ #include "base/test/scoped_feature_list.h"
+ #include "chrome/browser/containers/named_containers.h"
++#include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/ui/browser_element_identifiers.h"
+ #include "chrome/browser/ui/tabs/tab_menu_model.h"
+ #include "chrome/browser/ui/tabs/tab_menu_model_delegate.h"
+@@ -19,8 +20,10 @@
+ #include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "chrome/browser/ui/views/frame/tab_strip_region_view.h"
+ #include "chrome/browser/ui/views/tabs/shared/new_tab_button_menu_model.h"
++#include "chrome/common/helium_container_prefs.h"
+ #include "chrome/test/base/in_process_browser_test.h"
+ #include "chrome/test/base/ui_test_utils.h"
++#include "components/prefs/pref_service.h"
+ #include "content/public/browser/security_principal.h"
+ #include "content/public/browser/site_instance.h"
+ #include "content/public/browser/web_contents.h"
+@@ -176,6 +179,26 @@
+         [&] { return CountLeadingPixels(TabViewFor(work), kWorkRed) > 100; }));
+     EXPECT_EQ(0, CountLeadingPixels(TabViewFor(ordinary), kWorkRed));
+     EXPECT_EQ(0, CountLeadingPixels(TabViewFor(personal), kWorkRed));
++    const int full_pixels = CountLeadingPixels(TabViewFor(work), kWorkRed);
++    auto* prefs = browser()->GetProfile()->GetPrefs();
++    prefs->SetBoolean(prefs::kHeliumContainerMiniIcons, true);
++    RunScheduledLayouts();
++    const int mini_pixels = CountLeadingPixels(TabViewFor(work), kWorkRed);
++    EXPECT_GT(mini_pixels, 10);
++    EXPECT_LT(mini_pixels, full_pixels / 2);
++    EXPECT_TRUE(check(work, u"Container Work"));
++    prefs->SetBoolean(prefs::kHeliumContainersEnabled, false);
++    EXPECT_FALSE(Select("Work", false));
++    EXPECT_TRUE(check(work, u"Container Work"));
++    EXPECT_EQ(work_id, active()
++                           ->GetSiteInstance()
++                           ->GetSecurityPrincipal()
++                           .GetStoragePartitionConfig()
++                           .partition_name());
++    prefs->SetBoolean(prefs::kHeliumContainersEnabled, true);
++    prefs->SetBoolean(prefs::kHeliumContainerMiniIcons, false);
++    RunScheduledLayouts();
++    EXPECT_GT(CountLeadingPixels(TabViewFor(work), kWorkRed), mini_pixels * 2);
+ 
+     ASSERT_NO_FATAL_FAILURE(SelectPlus(@"New Temporary Container", vertical));
+     auto temporary = strip()->GetActiveTab()->GetHandle();
+--- a/chrome/browser/ui/tabs/tab_menu_model.cc
++++ b/chrome/browser/ui/tabs/tab_menu_model.cc
+@@ -343,7 +343,7 @@
+                                             : IDS_TAB_CXMENU_NEWTABTORIGHT);
+   }
+   SetElementIdentifierAt(GetItemCount() - 1, kAddNewTabAdjacentMenuItem);
+-  if (helium::containers::IsAvailable(tab_strip_->profile())) {
++  if (helium::containers::ShouldShowControls(tab_strip_->profile())) {
+     named_container_submenu_ = std::make_unique<NamedContainerMenuModel>(
+         tab_strip_->delegate()->GetBrowserWindowInterface(), tab_handles);
+     AddSubMenuWithStringId(TabStripModel::CommandOpenInContainer,
+--- a/chrome/browser/ui/tabs/tab_strip_model.cc
++++ b/chrome/browser/ui/tabs/tab_strip_model.cc
+@@ -2774,7 +2774,7 @@
+       return true;
+ 
+     case CommandOpenInContainer:
+-      return helium::containers::IsAvailable(profile());
++      return helium::containers::ShouldShowControls(profile());
+     case CommandReload:
+       return delegate_->CanReload();
+ 
+--- a/chrome/browser/ui/views/tabs/container_tab_accent.cc
++++ b/chrome/browser/ui/views/tabs/container_tab_accent.cc
+@@ -16,9 +16,11 @@
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/ui/tabs/container_foreground_icon.h"
+ #include "chrome/browser/ui/views/tabs/tab_style_views.h"
++#include "chrome/common/helium_container_prefs.h"
+ #include "chrome/common/helium_temporary_container_pref.h"
+ #include "chrome/common/pref_names.h"
+ #include "chrome/grit/generated_resources.h"
++#include "components/prefs/pref_service.h"
+ #include "components/tabs/public/tab_interface.h"
+ #include "content/public/browser/security_principal.h"
+ #include "content/public/browser/site_instance.h"
+@@ -80,6 +82,10 @@
+                                        const std::string& id)
+     : profile_(profile), view_(view), entry_{id, {}, Icon::kPerson, 0} {
+   prefs_.Init(profile.GetPrefs());
++  prefs_.Add(prefs::kHeliumContainerMiniIcons,
++             base::BindRepeating(&ContainerTabAccent::RefreshSize,
++                                 base::Unretained(this)));
++  RefreshSize();
+   auto changed = base::BindRepeating(&ContainerTabAccent::RefreshAppearance,
+                                      base::Unretained(this));
+   if (id.starts_with("t-")) {
+@@ -92,6 +98,13 @@
+ }
+ 
+ ContainerTabAccent::~ContainerTabAccent() = default;
++
++void ContainerTabAccent::RefreshSize() {
++  always_mini_ =
++      profile_->GetPrefs()->GetBoolean(prefs::kHeliumContainerMiniIcons);
++  view_->InvalidateLayout();
++  view_->SchedulePaint();
++}
+ 
+ void ContainerTabAccent::RefreshAppearance() {
+   // A deleted or unsynced container tab still belongs to its own partition.
+@@ -149,7 +162,7 @@
+   // leaving the actual tab outline and the icon artwork in physical
+   // coordinates.
+   const bool rtl = view_->GetMirroredXInView(0) != 0;
+-  const int width = large ? kWidth : 14;
++  const int width = large ? kWidth : 16;
+   const int left =
+       rtl ? std::floor(bounds.right()) - width : std::ceil(bounds.left());
+   const int center_x = left + width / 2;
+@@ -175,7 +188,7 @@
+   flags.setStrokeWidth(2.f / canvas->image_scale());
+   canvas->DrawPath(outline, flags);
+ 
+-  const int size = large ? 16 : 10;
++  const int size = large ? 16 : 12;
+   if (icon_.isNull() || icon_.width() != size || icon_color_ != foreground) {
+     icon_ =
+         helium::containers::ContainerForegroundIcon(entry_, size, foreground);
+--- a/chrome/browser/ui/views/tabs/container_tab_accent.h
++++ b/chrome/browser/ui/views/tabs/container_tab_accent.h
+@@ -34,6 +34,7 @@
+                      const tabs::TabInterface* tab,
+                      views::View& view);
+   ~ContainerTabAccent();
++  bool always_mini() const { return always_mini_; }
+   void Paint(gfx::Canvas* canvas, const TabStyleViews& style);
+ 
+  private:
+@@ -41,11 +42,13 @@
+                      views::View& view,
+                      const std::string& id);
+   void RefreshAppearance();
++  void RefreshSize();
+ 
+   const raw_ref<Profile> profile_;
+   const raw_ref<views::View> view_;
+   helium::containers::Entry entry_;
+   PrefChangeRegistrar prefs_;
++  bool always_mini_ = false;
+   gfx::ImageSkia icon_;
+   SkColor icon_color_ = SK_ColorTRANSPARENT;
+ };
+--- a/chrome/browser/ui/views/tabs/shared/new_tab_button_menu_model.cc
++++ b/chrome/browser/ui/views/tabs/shared/new_tab_button_menu_model.cc
+@@ -38,7 +38,7 @@
+   if (!browser) {
+     return nullptr;
+   }
+-  if (helium::containers::IsAvailable(browser->GetProfile())) {
++  if (helium::containers::ShouldShowControls(browser->GetProfile())) {
+     return std::make_unique<NamedContainerMenuModel>(browser);
+   }
+   if (base::FeatureList::IsEnabled(features::kNewTabButtonContextMenu)) {
+--- a/chrome/browser/ui/views/tabs/tab_style_views.cc
++++ b/chrome/browser/ui/views/tabs/tab_style_views.cc
+@@ -84,7 +84,8 @@
+ }
+ 
+ int TabStyleViews::GetContainerAccentInset(int width) const {
+-  if (!container_accent_ || delegate()->IsPinned()) {
++  if (!container_accent_ || container_accent_->always_mini() ||
++      delegate()->IsPinned()) {
+     return 0;
+   }
+   const int min_width =
+--- a/chrome/browser/ui/webui/settings/named_containers_handler.cc
++++ b/chrome/browser/ui/webui/settings/named_containers_handler.cc
+@@ -9,6 +9,7 @@
+ #include "base/values.h"
+ #include "chrome/browser/containers/named_containers.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "chrome/common/helium_container_prefs.h"
+ #include "chrome/common/pref_names.h"
+ #include "content/public/browser/web_ui.h"
+ 
+@@ -16,6 +17,9 @@
+ NamedContainersHandler::NamedContainersHandler() = default;
+ NamedContainersHandler::~NamedContainersHandler() = default;
+ void NamedContainersHandler::RegisterMessages() {
++  web_ui()->RegisterMessageCallback(
++      "moveNamedContainer", base::BindRepeating(&NamedContainersHandler::Move,
++                                                base::Unretained(this)));
+   web_ui()->RegisterMessageCallback(
+       "getNamedContainers", base::BindRepeating(&NamedContainersHandler::Get,
+                                                 base::Unretained(this)));
+@@ -31,6 +35,7 @@
+   registrar_.Init(Profile::FromWebUI(web_ui())->GetPrefs());
+   auto changed = base::BindRepeating(&NamedContainersHandler::Changed,
+                                      base::Unretained(this));
++  registrar_.Add(prefs::kHeliumContainerOrder, changed);
+   registrar_.Add(prefs::kHeliumNamedContainers, changed);
+   registrar_.Add(helium::containers::kAppearancePref, changed);
+ }
+@@ -58,6 +63,11 @@
+   AllowJavascript();
+   ResolveJavascriptCallback(args[0], List());
+ }
++void NamedContainersHandler::Move(const base::ListValue& args) {
++  CHECK_EQ(args.size(), 2u);
++  helium::containers::Move(Profile::FromWebUI(web_ui()), args[0].GetString(),
++                           args[1].GetString());
++}
+ void NamedContainersHandler::Save(const base::ListValue& args) {
+   CHECK_EQ(args.size(), 5u);
+   AllowJavascript();
+--- a/chrome/browser/ui/webui/settings/named_containers_handler.h
++++ b/chrome/browser/ui/webui/settings/named_containers_handler.h
+@@ -23,6 +23,7 @@
+   base::ListValue List();
+   void Changed();
+   void Get(const base::ListValue& args);
++  void Move(const base::ListValue& args);
+   void Save(const base::ListValue& args);
+   void Remove(const base::ListValue& args);
+   PrefChangeRegistrar registrar_;
+--- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
++++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
+@@ -619,6 +619,9 @@
+       {"appearanceBehaviorPageTitle", IDS_SETTINGS_APPEARANCE_AND_BEHAVIOR},
+       {"containersTitle", IDS_HELIUM_CONTAINER_TITLE},
+       {"containersDescription", IDS_HELIUM_CONTAINER_DESCRIPTION},
++      {"containersEnabled", IDS_HELIUM_CONTAINERS_ENABLED},
++      {"containerMiniIcons", IDS_HELIUM_CONTAINER_MINI_ICONS},
++      {"containerMove", IDS_HELIUM_CONTAINER_MOVE},
+       {"containerAdd", IDS_HELIUM_CONTAINER_ADD},
+       {"containerEdit", IDS_HELIUM_CONTAINER_EDIT},
+       {"containerEditNamed", IDS_HELIUM_CONTAINER_EDIT_NAMED},
+--- a/chrome/browser/ui/webui/settings/settings_ui.cc
++++ b/chrome/browser/ui/webui/settings/settings_ui.cc
+@@ -108,6 +108,7 @@
+ #include "chrome/browser/universal_optout/universal_optout_service_factory.h"
+ #include "chrome/common/channel_info.h"
+ #include "chrome/common/chrome_features.h"
++#include "chrome/common/helium_container_prefs.h"
+ #include "chrome/common/pref_names.h"
+ #include "chrome/common/url_constants.h"
+ #include "chrome/grit/generated_resources.h"
+@@ -264,6 +265,9 @@
+   registry->RegisterBooleanPref(prefs::kImportDialogSearchEngine, true);
+   registry->RegisterBooleanPref(prefs::kImportDialogExtensions, true);
+   registry->RegisterDictionaryPref(prefs::kDeviceTabVisibilityHiddenSessions);
++  registry->RegisterBooleanPref(prefs::kHeliumContainersEnabled, true);
++  registry->RegisterBooleanPref(prefs::kHeliumContainerMiniIcons, false);
++  registry->RegisterListPref(prefs::kHeliumContainerOrder);
+   registry->RegisterDictionaryPref(helium::containers::kAppearancePref);
+ }
+ 
+--- a/chrome/common/BUILD.gn
++++ b/chrome/common/BUILD.gn
+@@ -561,6 +561,7 @@
+     "chrome_result_codes.h",
+     "pref_font_script_names-inl.h",
+     "pref_font_webkit_names.h",
++    "helium_container_prefs.h",
+     "helium_temporary_container_pref.h",
+     "pref_names.h",
+   ]
+--- /dev/null
++++ b/chrome/common/helium_container_prefs.h
+@@ -0,0 +1,15 @@
++// Copyright 2026 The Helium Authors
++// You can use, redistribute, and/or modify this source code under
++// the terms of the GPL-3.0 license that can be found in the LICENSE file.
++
++#ifndef CHROME_COMMON_HELIUM_CONTAINER_PREFS_H_
++#define CHROME_COMMON_HELIUM_CONTAINER_PREFS_H_
++
++namespace prefs {
++inline constexpr char kHeliumContainersEnabled[] = "helium.containers.enabled";
++inline constexpr char kHeliumContainerMiniIcons[] =
++    "helium.containers.mini_icons";
++inline constexpr char kHeliumContainerOrder[] = "helium.containers.order";
++}  // namespace prefs
++
++#endif  // CHROME_COMMON_HELIUM_CONTAINER_PREFS_H_
