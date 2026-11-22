@@ -1,0 +1,121 @@
+Draw the mini badge above the site favicon in both tab layouts.
+
+--- a/chrome/browser/ui/views/tabs/BUILD.gn
++++ b/chrome/browser/ui/views/tabs/BUILD.gn
+@@ -176,6 +176,7 @@
+     "//skia",
+     "//ui/base",
+     "//ui/color",
++    "//ui/compositor",
+     "//ui/gfx",
+     "//ui/gfx/animation",
+     "//ui/gfx/geometry",
+--- a/chrome/browser/ui/views/tabs/common/tab_view.cc
++++ b/chrome/browser/ui/views/tabs/common/tab_view.cc
+@@ -838,6 +838,7 @@
+   }
+ 
+   View::PaintChildren(info);
++  tab_styling()->PaintMiniContainerAccent(info);
+ }
+ 
+ void TabView::OnPaint(gfx::Canvas* canvas) {
+--- a/chrome/browser/ui/views/tabs/tab.cc
++++ b/chrome/browser/ui/views/tabs/tab.cc
+@@ -497,6 +497,8 @@
+ }
+ 
+ void Tab::Layout(PassKey) {
++  icon_->SetCanPaintToLayer(controller_->CanPaintThrobberToLayer() &&
++                            !tab_style_views()->HasMiniContainerAccent());
+   const gfx::Rect contents_rect = GetContentsBounds();
+ 
+   const bool was_showing_icon = showing_icon_;
+@@ -928,6 +930,7 @@
+ 
+   clip_recorder.ClipPathWithAntiAliasing(clip_path);
+   View::PaintChildren(info);
++  tab_style_views()->PaintMiniContainerAccent(info);
+ }
+ 
+ void Tab::OnPaint(gfx::Canvas* canvas) {
+@@ -1144,7 +1147,8 @@
+   // is both overly aggressive and wasteful in the common case, and not
+   // frequent enough in other cases since the state can be updated and the tab
+   // painted before the animation is stepped.
+-  icon_->SetCanPaintToLayer(controller_->CanPaintThrobberToLayer());
++  icon_->SetCanPaintToLayer(controller_->CanPaintThrobberToLayer() &&
++                            !tab_style_views()->HasMiniContainerAccent());
+ }
+ 
+ void Tab::CreateFreezingVote(FreezingVoteReason reason,
+@@ -1603,7 +1607,8 @@
+   tabs::TabData old(std::move(data_));
+   data_ = tab_data;
+   icon_->SetData(data_);
+-  icon_->SetCanPaintToLayer(controller_->CanPaintThrobberToLayer());
++  icon_->SetCanPaintToLayer(controller_->CanPaintThrobberToLayer() &&
++                            !tab_style_views()->HasMiniContainerAccent());
+   UpdateTabIconAttention();
+   if (tabs::ShouldUpdateAccessibleName(old, data_)) {
+     UpdateAccessibleName();
+--- a/chrome/browser/ui/views/tabs/tab_style_views.cc
++++ b/chrome/browser/ui/views/tabs/tab_style_views.cc
+@@ -17,7 +17,10 @@
+ #include "chrome/browser/ui/views/tabs/common/horizontal_tab_style_views.h"
+ #include "chrome/browser/ui/views/tabs/common/vertical_tab_style_views.h"
+ #include "chrome/browser/ui/views/tabs/container_tab_accent.h"
++#include "ui/compositor/paint_recorder.h"
+ #include "ui/gfx/color_utils.h"
++#include "ui/views/paint_info.h"
++#include "ui/views/view.h"
+ 
+ // static
+ std::u16string ui::metadata::TypeConverter<TabStyle::TabColors>::ToString(
+@@ -95,8 +98,25 @@
+   return width >= min_width ? ContainerTabAccent::kWidth : 0;
+ }
+ 
++bool TabStyleViews::HasMiniContainerAccent() const {
++  return container_accent_ &&
++         !GetContainerAccentInset(delegate()->GetView()->width());
++}
++
+ void TabStyleViews::PaintContainerAccent(gfx::Canvas* canvas) const {
+-  if (container_accent_) {
++  if (container_accent_ && !HasMiniContainerAccent()) {
+     container_accent_->Paint(canvas, *this);
+   }
+ }
++
++void TabStyleViews::PaintMiniContainerAccent(
++    const views::PaintInfo& info) const {
++  if (!HasMiniContainerAccent()) {
++    return;
++  }
++  // The corner badge overlaps the site favicon and must be painted above it.
++  ui::PaintRecorder recorder(info.context(), info.paint_recording_size(),
++                             info.paint_recording_scale_x(),
++                             info.paint_recording_scale_y(), nullptr);
++  container_accent_->Paint(recorder.canvas(), *this);
++}
+--- a/chrome/browser/ui/views/tabs/tab_style_views.h
++++ b/chrome/browser/ui/views/tabs/tab_style_views.h
+@@ -42,6 +42,7 @@
+ struct TabPathFlags;
+ 
+ namespace views {
++class PaintInfo;
+ class View;
+ }
+ 
+@@ -127,7 +128,9 @@
+ 
+   void UpdateContainerAccent(const tabs::TabInterface* tab, views::View& view);
+   int GetContainerAccentInset(int width) const;
++  bool HasMiniContainerAccent() const;
+   void PaintContainerAccent(gfx::Canvas* canvas) const;
++  void PaintMiniContainerAccent(const views::PaintInfo& info) const;
+ 
+   // Returns the insets to use for laying out tab contents.
+   virtual gfx::Insets GetContentsInsets() const = 0;
