@@ -392,3 +392,4 @@ brave/temporary-containers-new-tab.patch
 brave/container-tab-indicators.patch
 brave/container-preferences.patch
 brave/container-mini-icon-overlay.patch
+brave/container-icon-editor.patch
